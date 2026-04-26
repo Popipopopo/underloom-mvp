@@ -1,0 +1,75 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/entities/player.tscn" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/entities/slime.tscn" id="2"]
+
+[sub_resource type="RectangleShape2D" id="ground_shape"]
+size = Vector2(900, 40)
+
+[sub_resource type="RectangleShape2D" id="wall_shape"]
+size = Vector2(40, 400)
+
+[sub_resource type="RectangleShape2D" id="ceiling_shape"]
+size = Vector2(900, 40)
+
+[node name="TestCombat" type="Node2D"]
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(0, 50)
+zoom = Vector2(2, 2)
+
+; ─── 地面 ───
+[node name="Ground" type="StaticBody2D" parent="."]
+position = Vector2(0, 200)
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+shape = SubResource("ground_shape")
+
+[node name="Visual" type="Polygon2D" parent="Ground"]
+color = Color(0.35, 0.25, 0.15, 1)
+polygon = PackedVector2Array(-450, -20, 450, -20, 450, 20, -450, 20)
+
+; ─── 左墙 ───
+[node name="LeftWall" type="StaticBody2D" parent="."]
+position = Vector2(-470, 0)
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LeftWall"]
+shape = SubResource("wall_shape")
+
+[node name="Visual" type="Polygon2D" parent="LeftWall"]
+color = Color(0.35, 0.25, 0.15, 1)
+polygon = PackedVector2Array(-20, -200, 20, -200, 20, 200, -20, 200)
+
+; ─── 右墙 ───
+[node name="RightWall" type="StaticBody2D" parent="."]
+position = Vector2(470, 0)
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RightWall"]
+shape = SubResource("wall_shape")
+
+[node name="Visual" type="Polygon2D" parent="RightWall"]
+color = Color(0.35, 0.25, 0.15, 1)
+polygon = PackedVector2Array(-20, -200, 20, -200, 20, 200, -20, 200)
+
+; ─── 顶部（防止飞太高）───
+[node name="Ceiling" type="StaticBody2D" parent="."]
+position = Vector2(0, -200)
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling"]
+shape = SubResource("ceiling_shape")
+
+; ─── 玩家 ───
+[node name="Player" parent="." instance=ExtResource("1")]
+position = Vector2(-100, 100)
+
+; ─── 史莱姆 ───
+[node name="Slime" parent="." instance=ExtResource("2")]
+position = Vector2(200, 100)

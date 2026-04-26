@@ -19,6 +19,17 @@ config/icon="res://icon.svg"
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[layer_names]
+
+2d_physics/layer_1="World"
+2d_physics/layer_2="Player"
+2d_physics/layer_3="Enemy"
+2d_physics/layer_4="PlayerHurtbox"
+2d_physics/layer_5="EnemyHurtbox"
+2d_physics/layer_6="PlayerProjectile"
+2d_physics/layer_7="EnemyProjectile"
+2d_physics/layer_8="Pickup"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
