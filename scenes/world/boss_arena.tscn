@@ -1,0 +1,34 @@
+[gd_scene format=3 uid="uid://dmraahgttyevd"]
+
+[ext_resource type="Script" uid="uid://thcb88o5t51k" path="res://scripts/world/BossArena.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/entities/boss_slime.tscn" id="2_ltlcp"]
+
+[sub_resource type="RectangleShape2D" id="room_shape"]
+size = Vector2(640, 360)
+
+[sub_resource type="RectangleShape2D" id="barrier_shape"]
+size = Vector2(16, 360)
+
+[node name="BossArena" type="Area2D" unique_id=609512621]
+collision_layer = 0
+collision_mask = 2
+script = ExtResource("1")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=2054671288]
+shape = SubResource("room_shape")
+
+[node name="Barrier" type="StaticBody2D" parent="." unique_id=603254084]
+position = Vector2(-310, 0)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Barrier" unique_id=565450534]
+shape = SubResource("barrier_shape")
+
+[node name="Visual" type="ColorRect" parent="Barrier" unique_id=1604074308]
+offset_left = -8.0
+offset_top = -180.0
+offset_right = 8.0
+offset_bottom = 180.0
+color = Color(0.55, 0.45, 0.95, 0.45)
+
+[node name="BossSlime" parent="." unique_id=1288500779 instance=ExtResource("2_ltlcp")]

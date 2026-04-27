@@ -1,7 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene format=4 uid="uid://n5a5v77kgqe3"]
 
-[ext_resource type="PackedScene" path="res://scenes/entities/player.tscn" id="1"]
-[ext_resource type="PackedScene" path="res://scenes/entities/slime.tscn" id="2"]
+[ext_resource type="PackedScene" uid="uid://bolijrb3yk86d" path="res://scenes/entities/player.tscn" id="1"]
+[ext_resource type="PackedScene" uid="uid://drkde50imb1s1" path="res://scenes/entities/slime.tscn" id="2"]
+[ext_resource type="Texture2D" uid="uid://6r1wben23pde" path="res://assets/sprites/background/Background.png" id="2_vhqty"]
+[ext_resource type="PackedScene" path="res://scenes/ui/DebugHud.tscn" id="3"]
+[ext_resource type="Script" uid="uid://xjm4twlqh6ca" path="res://scripts/world/TestCombatController.gd" id="4"]
+[ext_resource type="TileSet" uid="uid://dsuugb077e55m" path="res://assets/tiles/dungeon_tileset.tres" id="6_d0u7y"]
 
 [sub_resource type="RectangleShape2D" id="ground_shape"]
 size = Vector2(900, 40)
@@ -12,64 +16,69 @@ size = Vector2(40, 400)
 [sub_resource type="RectangleShape2D" id="ceiling_shape"]
 size = Vector2(900, 40)
 
-[node name="TestCombat" type="Node2D"]
+[node name="TestCombat" type="Node2D" unique_id=242775941]
+script = ExtResource("4")
 
-[node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(0, 50)
-zoom = Vector2(2, 2)
+[node name="Background" type="Sprite2D" parent="." unique_id=1861493615]
+position = Vector2(-209, 43)
+texture = ExtResource("2_vhqty")
 
-; ─── 地面 ───
-[node name="Ground" type="StaticBody2D" parent="."]
+[node name="Background" type="Sprite2D" parent="Background" unique_id=1011960888]
+position = Vector2(480, 0)
+texture = ExtResource("2_vhqty")
+
+[node name="Ground" type="StaticBody2D" parent="." unique_id=735876219]
 position = Vector2(0, 200)
-collision_layer = 1
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground" unique_id=491783648]
 shape = SubResource("ground_shape")
 
-[node name="Visual" type="Polygon2D" parent="Ground"]
+[node name="Visual" type="Polygon2D" parent="Ground" unique_id=1147483556]
+position = Vector2(0, -4)
 color = Color(0.35, 0.25, 0.15, 1)
 polygon = PackedVector2Array(-450, -20, 450, -20, 450, 20, -450, 20)
 
-; ─── 左墙 ───
-[node name="LeftWall" type="StaticBody2D" parent="."]
+[node name="LeftWall" type="StaticBody2D" parent="." unique_id=755912537]
 position = Vector2(-470, 0)
-collision_layer = 1
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="LeftWall"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LeftWall" unique_id=835855359]
 shape = SubResource("wall_shape")
 
-[node name="Visual" type="Polygon2D" parent="LeftWall"]
+[node name="Visual" type="Polygon2D" parent="LeftWall" unique_id=1892763253]
 color = Color(0.35, 0.25, 0.15, 1)
 polygon = PackedVector2Array(-20, -200, 20, -200, 20, 200, -20, 200)
 
-; ─── 右墙 ───
-[node name="RightWall" type="StaticBody2D" parent="."]
+[node name="RightWall" type="StaticBody2D" parent="." unique_id=1216446328]
 position = Vector2(470, 0)
-collision_layer = 1
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="RightWall"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="RightWall" unique_id=679511869]
 shape = SubResource("wall_shape")
 
-[node name="Visual" type="Polygon2D" parent="RightWall"]
+[node name="Visual" type="Polygon2D" parent="RightWall" unique_id=185253533]
 color = Color(0.35, 0.25, 0.15, 1)
 polygon = PackedVector2Array(-20, -200, 20, -200, 20, 200, -20, 200)
 
-; ─── 顶部（防止飞太高）───
-[node name="Ceiling" type="StaticBody2D" parent="."]
+[node name="Ceiling" type="StaticBody2D" parent="." unique_id=271214845]
 position = Vector2(0, -200)
-collision_layer = 1
 collision_mask = 0
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ceiling" unique_id=1413185448]
 shape = SubResource("ceiling_shape")
 
-; ─── 玩家 ───
-[node name="Player" parent="." instance=ExtResource("1")]
+[node name="Player" parent="." unique_id=2117906605 instance=ExtResource("1")]
 position = Vector2(-100, 100)
 
-; ─── 史莱姆 ───
-[node name="Slime" parent="." instance=ExtResource("2")]
+[node name="Camera2D" type="Camera2D" parent="Player" unique_id=649801377]
+zoom = Vector2(2, 2)
+
+[node name="Slime" parent="." unique_id=1954231012 instance=ExtResource("2")]
 position = Vector2(200, 100)
+
+[node name="DebugHud" parent="." unique_id=2120598538 instance=ExtResource("3")]
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=415579978]
+tile_map_data = PackedByteArray("AAD5/wcAAAAHAAoAAAD6/wcAAAAHAAoAAAD7/wcAAAAHAAoAAAD4/wcAAAAGAAoAAAD8/wcAAAAIAAoAAAD4/wgAAAAGAAsAAAD5/wgAAAAHAAsAAAD6/wgAAAAHAAsAAAD7/wgAAAAHAAsAAAD8/wgAAAAIAAsAAAD4/wkAAAAGAAwAAAD8/wkAAAAIAAwAAAD5/wkAAAAHAAwAAAD6/wkAAAAHAAwAAAD7/wkAAAAHAAwAAAD7/wYAAAAPAA8AAAAGAAoAAAAQABEAAAA=")
+tile_set = ExtResource("6_d0u7y")

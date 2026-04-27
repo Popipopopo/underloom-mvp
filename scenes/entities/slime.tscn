@@ -159,7 +159,7 @@ collision_mask = 0
 script = ExtResource("2")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=1188908293]
-position = Vector2(0.5, 6)
+position = Vector2(0, 7)
 shape = SubResource("hurt_shape")
 
 [node name="Hitbox" type="Area2D" parent="." unique_id=1994161674]
@@ -168,5 +168,5 @@ collision_mask = 8
 script = ExtResource("3")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hitbox" unique_id=611236538]
-position = Vector2(0.5, 7)
+position = Vector2(0, 7)
 shape = SubResource("hit_shape")

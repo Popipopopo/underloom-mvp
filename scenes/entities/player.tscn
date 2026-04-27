@@ -1,12 +1,36 @@
-[gd_scene load_steps=33 format=3 uid="uid://bolijrb3yk86d"]
+[gd_scene format=3 uid="uid://bolijrb3yk86d"]
 
 [ext_resource type="Script" uid="uid://cq8djgvdmoaw6" path="res://scripts/entities/player.gd" id="1"]
 [ext_resource type="Script" uid="uid://rdequrus5pec" path="res://scripts/combat/Hurtbox.gd" id="2"]
 [ext_resource type="Script" uid="uid://bnigqj44udxyx" path="res://scripts/combat/Stats.gd" id="3"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/B_witch_idle.png" id="4"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/B_witch_run.png" id="5"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/B_witch_take_damage.png" id="6"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/B_witch_death.png" id="7"]
+[ext_resource type="Texture2D" uid="uid://byyxnmtbyrelq" path="res://assets/sprites/player/B_witch_idle.png" id="4"]
+[ext_resource type="Texture2D" uid="uid://bqu7mqggw0gng" path="res://assets/sprites/player/B_witch_run.png" id="5"]
+[ext_resource type="Texture2D" uid="uid://bf3a7lxonjtjs" path="res://assets/sprites/player/B_witch_take_damage.png" id="6"]
+[ext_resource type="Texture2D" uid="uid://nj77tijaitby" path="res://assets/sprites/player/B_witch_death.png" id="7"]
+
+[sub_resource type="AtlasTexture" id="d0"]
+atlas = ExtResource("7")
+region = Rect2(0, 0, 32, 48)
+
+[sub_resource type="AtlasTexture" id="d1"]
+atlas = ExtResource("7")
+region = Rect2(0, 48, 32, 48)
+
+[sub_resource type="AtlasTexture" id="d2"]
+atlas = ExtResource("7")
+region = Rect2(0, 96, 32, 48)
+
+[sub_resource type="AtlasTexture" id="d3"]
+atlas = ExtResource("7")
+region = Rect2(0, 144, 32, 48)
+
+[sub_resource type="AtlasTexture" id="d4"]
+atlas = ExtResource("7")
+region = Rect2(0, 192, 32, 48)
+
+[sub_resource type="AtlasTexture" id="d5"]
+atlas = ExtResource("7")
+region = Rect2(0, 240, 32, 48)
 
 [sub_resource type="AtlasTexture" id="i0"]
 atlas = ExtResource("4")
@@ -76,32 +100,31 @@ region = Rect2(0, 48, 32, 48)
 atlas = ExtResource("6")
 region = Rect2(0, 96, 32, 48)
 
-[sub_resource type="AtlasTexture" id="d0"]
-atlas = ExtResource("7")
-region = Rect2(0, 0, 32, 48)
-
-[sub_resource type="AtlasTexture" id="d1"]
-atlas = ExtResource("7")
-region = Rect2(0, 48, 32, 48)
-
-[sub_resource type="AtlasTexture" id="d2"]
-atlas = ExtResource("7")
-region = Rect2(0, 96, 32, 48)
-
-[sub_resource type="AtlasTexture" id="d3"]
-atlas = ExtResource("7")
-region = Rect2(0, 144, 32, 48)
-
-[sub_resource type="AtlasTexture" id="d4"]
-atlas = ExtResource("7")
-region = Rect2(0, 192, 32, 48)
-
-[sub_resource type="AtlasTexture" id="d5"]
-atlas = ExtResource("7")
-region = Rect2(0, 240, 32, 48)
-
 [sub_resource type="SpriteFrames" id="frames"]
 animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("d0")
+}, {
+"duration": 1.0,
+"texture": SubResource("d1")
+}, {
+"duration": 1.0,
+"texture": SubResource("d2")
+}, {
+"duration": 1.0,
+"texture": SubResource("d3")
+}, {
+"duration": 1.0,
+"texture": SubResource("d4")
+}, {
+"duration": 1.0,
+"texture": SubResource("d5")
+}],
+"loop": false,
+"name": &"death",
+"speed": 5.0
+}, {
 "frames": [{
 "duration": 1.0,
 "texture": SubResource("i0")
@@ -167,29 +190,6 @@ animations = [{
 "loop": false,
 "name": &"take_damage",
 "speed": 6.0
-}, {
-"frames": [{
-"duration": 1.0,
-"texture": SubResource("d0")
-}, {
-"duration": 1.0,
-"texture": SubResource("d1")
-}, {
-"duration": 1.0,
-"texture": SubResource("d2")
-}, {
-"duration": 1.0,
-"texture": SubResource("d3")
-}, {
-"duration": 1.0,
-"texture": SubResource("d4")
-}, {
-"duration": 1.0,
-"texture": SubResource("d5")
-}],
-"loop": false,
-"name": &"death",
-"speed": 5.0
 }]
 
 [sub_resource type="CapsuleShape2D" id="body_shape"]
@@ -197,31 +197,34 @@ radius = 5.0
 height = 18.0
 
 [sub_resource type="RectangleShape2D" id="hurt_shape"]
-size = Vector2(14, 26)
+size = Vector2(14, 23)
 
-[node name="Player" type="CharacterBody2D"]
+[node name="Player" type="CharacterBody2D" unique_id=1881831291]
 collision_layer = 2
-collision_mask = 1
 script = ExtResource("1")
 
-[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=2043825450]
 position = Vector2(0, -2)
 scale = Vector2(0.7, 0.7)
 sprite_frames = SubResource("frames")
 animation = &"idle"
 autoplay = "idle"
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, 5)
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1209743200]
+position = Vector2(0, 1)
 shape = SubResource("body_shape")
 
-[node name="Hurtbox" type="Area2D" parent="."]
+[node name="Hurtbox" type="Area2D" parent="." unique_id=1254460063]
 collision_layer = 8
 collision_mask = 0
 script = ExtResource("2")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=1242972276]
+position = Vector2(0, -1.5)
 shape = SubResource("hurt_shape")
 
-[node name="Stats" type="Node" parent="."]
+[node name="Stats" type="Node" parent="." unique_id=1686162625]
 script = ExtResource("3")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=965996802]
+zoom = Vector2(2, 2)
