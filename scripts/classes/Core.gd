@@ -8,13 +8,13 @@ var id: String
 var display_name: String
 var core_type: String          # "main" / "support"
 
-# 弹药（GDD 6.6 + 用户自定）
-# - 主核：max_ammo > 0，current_ammo 用光后核销毁
-# - 辅核：max_ammo = -1 表示无限
-var max_ammo: int = -1
-var current_ammo: int = -1
+# 充能（v1.1：核是可充能技能，不是消耗品）
+# - 主核：max_charges > 0，用光后不销毁，回工作室自动恢复
+# - 辅核：max_charges = -1 表示无限
+var max_charges: int = -1
+var current_charges: int = -1
 
-# 充能（充能时长，由 WandController 用 wand.charge_speed 折算）
+# 施放前摇（回合制战斗系统接入后决定具体语义）
 var charge_time: float = 0.3
 
 # ────────────────────────────────────────────
@@ -43,14 +43,19 @@ var tag_words: Array[String] = []
 var result_lv: int = 0
 
 # ────────────────────────────────────────────
-# 弹药 API
+# 充能 API
 # ────────────────────────────────────────────
 func is_depleted() -> bool:
-	return max_ammo > 0 and current_ammo <= 0
+	return max_charges > 0 and current_charges <= 0
 
-func consume_ammo(n: int = 1) -> void:
-	if max_ammo > 0:
-		current_ammo = max(0, current_ammo - n)
+func consume_charge(n: int = 1) -> void:
+	if max_charges > 0:
+		current_charges = max(0, current_charges - n)
+
+## 回工作室时调用：充能全满
+func recharge_full() -> void:
+	if max_charges > 0:
+		current_charges = max_charges
 
 # ────────────────────────────────────────────
 # 工厂方法
@@ -59,7 +64,7 @@ func consume_ammo(n: int = 1) -> void:
 static func make_main_from_tiers(
 	p_id: String, p_name: String, p_pattern: String,
 	p_dmg_tier: String, p_range_tier: String, p_special_tier: String,
-	p_max_ammo: int, p_element: String = "", p_charge: float = 0.3
+	p_max_charges: int, p_element: String = "", p_charge: float = 0.3
 ) -> Core:
 	var c := Core.new()
 	c.id = p_id
@@ -70,12 +75,12 @@ static func make_main_from_tiers(
 	c.range_tier = p_range_tier
 	c.special_tier = p_special_tier
 	c.element = p_element
-	c.max_ammo = p_max_ammo
-	c.current_ammo = p_max_ammo
+	c.max_charges = p_max_charges
+	c.current_charges = p_max_charges
 	c.charge_time = p_charge
 	return c
 
-# 辅核：MVP 阶段无弹药（max_ammo = -1）
+# 辅核：MVP 阶段无充能限制（max_charges = -1）
 static func make_support(p_id: String, p_name: String, p_effect: String, p_value: float) -> Core:
 	var c := Core.new()
 	c.id = p_id
@@ -83,6 +88,6 @@ static func make_support(p_id: String, p_name: String, p_effect: String, p_value
 	c.core_type = "support"
 	c.support_effect = p_effect
 	c.support_value = p_value
-	c.max_ammo = -1
-	c.current_ammo = -1
+	c.max_charges = -1
+	c.current_charges = -1
 	return c

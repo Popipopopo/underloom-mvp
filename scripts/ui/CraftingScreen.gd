@@ -20,10 +20,9 @@ const EL_COLOR_DEFAULT := Color(0.7, 0.7, 0.7)
 
 # ── 状态 ─────────────────────────────────────────────────────────────────────
 var _manager: CraftingManager = CraftingManager.new()
-var _current_step: int = 0   # 0=配方 1=材料 4=元素干涉 5=tag共鸣 7=结果
+var _current_step: int = 0   # 0=配方 1=材料 3=点数分配 4=元素干涉 5=tag共鸣 7=结果
 var _current_slot: int = 0   # 用于Step1逐槽推进
-var _free_discards_used: int = 0
-var _free_discards_max: int = 2
+var _alloc_elem: int = 0     # 点数分配步骤：当前分给元素保留点的数量
 var _first_tag_resonance_triggered: bool = false
 
 # ── UI 根节点 ─────────────────────────────────────────────────────────────────
@@ -167,7 +166,6 @@ func _on_recipe_chosen(recipe_id: String) -> void:
 	if not ok:
 		return
 	_current_slot = 0
-	_free_discards_used = 0
 	_first_tag_resonance_triggered = false
 	_show_step_1(_current_slot)
 
@@ -207,17 +205,16 @@ func _show_step_1(slot_index: int) -> void:
 	flow.add_theme_constant_override("v_separation", 10)
 	_content.add_child(flow)
 
+	# v1.1 方案B：每种材料一张卡，显示元素"潜力"（上限），真实 roll 在入槽后
+	# 显示在上方槽位条里——入槽即所得，不满意可返回换材料重掷
 	for mat_obj in candidates:
 		var mat: CraftingMaterial = mat_obj as CraftingMaterial
 		var stock: int = GameState.get_workshop_count(mat.id)
-		var show_count: int = max(stock, 1)
-		for _i in range(show_count):
-			var preview_els: Array[String] = _preview_roll(mat)
-			var card := _make_item_card(mat, stock > 0, preview_els)
-			flow.add_child(card)
-			var btn: Button = card.find_child("SelectBtn", true, false) as Button
-			if btn != null and stock > 0:
-				btn.pressed.connect(_on_material_selected.bind(slot_index, mat.id))
+		var card := _make_item_card(mat, stock > 0)
+		flow.add_child(card)
+		var btn: Button = card.find_child("SelectBtn", true, false) as Button
+		if btn != null and stock > 0:
+			btn.pressed.connect(_on_material_selected.bind(slot_index, mat.id))
 
 ## 重建槽位总览行
 func _update_slot_bar(active_slot: int) -> void:
@@ -275,7 +272,7 @@ func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 	vbox.add_child(tag_lbl)
 
 	if is_filled:
-		# 已选材料名 + 元素点预览
+		# 已选材料名 + 真实 roll 结果（v1.1 方案B：入槽即所得）
 		var mat: CraftingMaterial = MaterialDB.get_material(filled_id)
 		if mat != null:
 			var name_lbl := Label.new()
@@ -287,12 +284,11 @@ func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 			var el_row := HBoxContainer.new()
 			el_row.add_theme_constant_override("separation", 2)
 			el_row.alignment = BoxContainer.ALIGNMENT_CENTER
-			for el in mat.elements_max.keys():
-				for _j in range(int(mat.elements_max[el])):
-					var dot := ColorRect.new()
-					dot.custom_minimum_size = Vector2(8, 8)
-					dot.color = EL_COLOR.get(el, EL_COLOR_DEFAULT)
-					el_row.add_child(dot)
+			for el in _manager.get_slot_roll(slot_i):
+				var dot := ColorRect.new()
+				dot.custom_minimum_size = Vector2(8, 8)
+				dot.color = EL_COLOR.get(el, EL_COLOR_DEFAULT)
+				el_row.add_child(dot)
 			vbox.add_child(el_row)
 	elif is_active:
 		var hint := Label.new()
@@ -304,19 +300,6 @@ func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 
 	return chip
 
-## 预览 roll：与 CraftingManager.roll_elements 同逻辑，但只针对单个材料
-func _preview_roll(mat: CraftingMaterial) -> Array[String]:
-	var result: Array[String] = []
-	# 保底元素至少 1 个
-	result.append(mat.default_element)
-	for el in mat.elements_max.keys():
-		var max_units: int = int(mat.elements_max[el])
-		var already: int = 1 if el == mat.default_element else 0
-		for _u in range(already, max_units):
-			if randi() % 2 == 0:
-				result.append(el)
-	return result
-
 func _go_back_slot(slot_index: int) -> void:
 	# 清掉前一槽的选择，回到前一槽
 	_manager.clear_slot(slot_index - 1)
@@ -324,8 +307,8 @@ func _go_back_slot(slot_index: int) -> void:
 	_show_step_1(_current_slot)
 
 ## 单个材料格子（紧凑卡片，适合 flow 网格）
-## preview_els: 预 roll 好的元素列表，直接显示
-func _make_item_card(mat: CraftingMaterial, available: bool, preview_els: Array[String] = []) -> PanelContainer:
+## 元素点显示"潜力"：保底元素实色，其余可能出的元素半透明
+func _make_item_card(mat: CraftingMaterial, available: bool) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(140, 0)
 
@@ -360,21 +343,27 @@ func _make_item_card(mat: CraftingMaterial, available: bool, preview_els: Array[
 	vbox.add_child(name_lbl)
 
 	var lv_lbl := Label.new()
-	lv_lbl.text = "Lv%d" % mat.lv
+	lv_lbl.text = "Lv%d　库存 %d" % [mat.lv, GameState.get_workshop_count(mat.id)]
 	lv_lbl.add_theme_font_size_override("font_size", 11)
 	lv_lbl.add_theme_color_override("font_color", Color(0.65, 0.65, 0.75))
 	vbox.add_child(lv_lbl)
 
-	# 元素点（小彩色方块）——显示预 roll 结果，不同实例会有不同数量
+	# 元素点（小彩色方块）——显示潜力上限：保底 1 个实色，其余半透明表示"可能出"
 	var el_row := HBoxContainer.new()
 	el_row.add_theme_constant_override("separation", 3)
 	vbox.add_child(el_row)
-	var display_els: Array[String] = preview_els if not preview_els.is_empty() else [mat.default_element]
-	for el in display_els:
-		var dot := ColorRect.new()
-		dot.custom_minimum_size = Vector2(10, 10)
-		dot.color = EL_COLOR.get(el, EL_COLOR_DEFAULT) if available else Color(0.3, 0.3, 0.3)
-		el_row.add_child(dot)
+	var default_shown: bool = false
+	for el in mat.elements_max.keys():
+		for _j in range(int(mat.elements_max[el])):
+			var dot := ColorRect.new()
+			dot.custom_minimum_size = Vector2(10, 10)
+			var col: Color = EL_COLOR.get(el, EL_COLOR_DEFAULT) if available else Color(0.3, 0.3, 0.3)
+			if el == mat.default_element and not default_shown:
+				default_shown = true   # 保底那 1 个实色
+			else:
+				col.a = 0.4            # 其余是可能性
+			dot.color = col
+			el_row.add_child(dot)
 
 	# tags（小字）
 	var tag_lbl := Label.new()
@@ -405,10 +394,85 @@ func _on_material_selected(slot_index: int, mat_id: String) -> void:
 	if _current_slot < _manager.state.recipe.slot_count():
 		_show_step_1(_current_slot)
 	else:
-		# All slots filled — auto-run steps 2 & 3, then show step 4
+		# All slots filled — 汇入元素池 + 算品质，然后先分配点数（v1.1）
 		_manager.roll_elements()
 		_manager.compute_lv()
-		_show_step_4()
+		_show_step_allocate()
+
+# ── Step 3: 点数分配（v1.1 §2.4）───────────────────────────────────────────────
+# 总点数由品质决定，玩家自主分给「元素保留点」和「共鸣保留点」：
+# 想稳就多拿元素点，想赌 tag 组合就多拿共鸣点。
+func _show_step_allocate() -> void:
+	_current_step = 3
+	_clear_content()
+	_title_label.text = "分配保留点 — 品质 %s（共 %d 点）" % [
+		_manager.get_quality_name(), _manager.total_pts]
+	_slot_bar.visible = true
+	_update_slot_bar(-1)
+	_configure_back_btn_to_slot_selection()
+
+	# 默认分配：约 2/3 给元素（与 v1 固定值一致），玩家可调
+	_alloc_elem = int((_manager.total_pts + 1) / 2.0)
+
+	var hint := Label.new()
+	hint.text = "元素保留点用来锁定想要的元素；共鸣保留点用来触发额外的 Tag 组合。\n第一个 Tag 共鸣永远免费。"
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_content.add_child(hint)
+
+	_content.add_child(HSeparator.new())
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_content.add_child(row)
+
+	var alloc_lbl := Label.new()
+	alloc_lbl.name = "AllocLabel"
+	alloc_lbl.add_theme_font_size_override("font_size", 18)
+	row.add_child(alloc_lbl)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_content.add_child(btn_row)
+
+	var minus_btn := Button.new()
+	minus_btn.text = "◀ 元素-1"
+	minus_btn.custom_minimum_size = Vector2(110, 36)
+	minus_btn.pressed.connect(_on_alloc_changed.bind(-1, alloc_lbl))
+	btn_row.add_child(minus_btn)
+
+	var plus_btn := Button.new()
+	plus_btn.text = "元素+1 ▶"
+	plus_btn.custom_minimum_size = Vector2(110, 36)
+	plus_btn.pressed.connect(_on_alloc_changed.bind(1, alloc_lbl))
+	btn_row.add_child(plus_btn)
+
+	_refresh_alloc_label(alloc_lbl)
+
+	_content.add_child(HSeparator.new())
+
+	var confirm_btn := Button.new()
+	confirm_btn.text = "就这样，开始干涉 →"
+	confirm_btn.pressed.connect(_on_alloc_confirm)
+	_content.add_child(confirm_btn)
+
+func _refresh_alloc_label(alloc_lbl: Label) -> void:
+	alloc_lbl.text = "元素保留点 %d　|　共鸣保留点 %d" % [
+		_alloc_elem, _manager.total_pts - _alloc_elem]
+
+func _on_alloc_changed(delta: int, alloc_lbl: Label) -> void:
+	_alloc_elem = clampi(_alloc_elem + delta, 0, _manager.total_pts)
+	_refresh_alloc_label(alloc_lbl)
+
+func _on_alloc_confirm() -> void:
+	var err: String = _manager.allocate_points(_alloc_elem, _manager.total_pts - _alloc_elem)
+	if err != "":
+		_add_label("错误: " + err)
+		return
+	_show_step_4()
 
 # ── Step 4: 元素干涉 ──────────────────────────────────────────────────────────
 # 元素默认灰色（inactive），花元素保留点勾选保留，只有勾选的才计入共鸣
@@ -418,7 +482,11 @@ func _show_step_4() -> void:
 	_title_label.text = "元素干涉 — 选择要保留的元素"
 	_slot_bar.visible = true
 	_update_slot_bar(-1)
-	_configure_back_btn_to_slot_selection()
+	_back_btn.visible = true
+	if _back_btn.pressed.get_connections().size() > 0:
+		_clear_back_btn_connections()
+	_back_btn.text = "← 重新分配点数"
+	_back_btn.pressed.connect(_show_step_allocate)
 
 	# 左右分栏
 	var split := HBoxContainer.new()
@@ -451,6 +519,14 @@ func _show_step_4() -> void:
 	dots_flow.add_theme_constant_override("v_separation", 6)
 	left.add_child(dots_flow)
 
+	# 重炼：锁定的保留，未锁定的重掷（v1.1 §2.4，每次合成 1 次）
+	var reroll_btn := Button.new()
+	reroll_btn.name = "RerollBtn"
+	reroll_btn.text = "🎲 重炼（剩 %d 次）" % _manager.reroll_charges
+	reroll_btn.disabled = _manager.reroll_charges <= 0
+	reroll_btn.tooltip_text = "保留已勾选的元素，重新 roll 其余部分"
+	left.add_child(reroll_btn)
+
 	# 右栏：共鸣列表
 	var right := VBoxContainer.new()
 	right.custom_minimum_size = Vector2(200, 0)
@@ -472,6 +548,15 @@ func _show_step_4() -> void:
 	confirm_btn.pressed.connect(_on_step4_confirm)
 	_content.add_child(confirm_btn)
 
+	reroll_btn.pressed.connect(_on_reroll_pressed.bind(reroll_btn, dots_flow, res_list, pts_lbl))
+
+	_rebuild_element_dots(dots_flow, res_list, pts_lbl)
+
+func _on_reroll_pressed(reroll_btn: Button, dots_flow: HFlowContainer, res_list: VBoxContainer, pts_lbl: Label) -> void:
+	if not _manager.reroll_unlocked():
+		return
+	reroll_btn.text = "🎲 重炼（剩 %d 次）" % _manager.reroll_charges
+	reroll_btn.disabled = _manager.reroll_charges <= 0
 	_rebuild_element_dots(dots_flow, res_list, pts_lbl)
 
 func _rebuild_element_dots(dots_flow: HFlowContainer, res_list: VBoxContainer, pts_lbl: Label) -> void:

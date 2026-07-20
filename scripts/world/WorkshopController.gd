@@ -31,12 +31,8 @@ func _setup_camera_limits() -> void:
 func _on_start_gate_body_entered(body: Node) -> void:
 	if body == null or not body.is_in_group("player"):
 		return
-	RunManager.start_run()
-	call_deferred("_deferred_enter_combat")
-
-
-func _deferred_enter_combat() -> void:
-	get_tree().change_scene_to_file("res://scenes/world/test_combat.tscn")
+	# v1.1：横版地下城已移除，出门入口等节点地图探索系统接入
+	print("[Workshop] 探索入口：节点地图系统开发中")
 
 
 func _on_craft_bench_body_entered(body: Node) -> void:

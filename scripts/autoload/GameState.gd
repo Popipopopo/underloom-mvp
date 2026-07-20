@@ -72,12 +72,12 @@ func _setup_test_loadout() -> void:
 	owned_wands.append(wand)
 	equipped_wand = wand
 
-	print("[GameState] 测试装备：%s（%d 槽）+ %s（%d/%d 弹药）" % [
+	print("[GameState] 测试装备：%s（%d 槽）+ %s（%d/%d 充能）" % [
 		equipped_wand.display_name,
 		equipped_wand.slot_count,
 		bullet.display_name,
-		bullet.current_ammo,
-		bullet.max_ammo,
+		bullet.current_charges,
+		bullet.max_charges,
 	])
 
 # ────────────────────────────────────────────
@@ -133,9 +133,15 @@ func try_transfer_backpack_to_workshop(id: String, count: int = 1) -> bool:
 	add_workshop_material(id, count)
 	return true
 
-# 回到工作室时：背包全部并入仓库后清空背包
+# 回到工作室时：背包全部并入仓库后清空背包，所有核充能恢复（v1.1）
 func merge_backpack_into_workshop() -> void:
 	for k in backpack.keys():
 		workshop_inventory[k] = workshop_inventory.get(k, 0) + int(backpack[k])
 	backpack.clear()
+	recharge_all_cores()
 	print("[GameState] Merged backpack into workshop; workshop=%s" % [str(workshop_inventory)])
+
+# 所有核充能全满（回工作室时自动调用）
+func recharge_all_cores() -> void:
+	for c in owned_cores:
+		(c as Core).recharge_full()

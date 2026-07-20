@@ -1,8 +1,6 @@
 [gd_scene format=3 uid="uid://bolijrb3yk86d"]
 
 [ext_resource type="Script" uid="uid://cq8djgvdmoaw6" path="res://scripts/entities/player.gd" id="1"]
-[ext_resource type="Script" uid="uid://rdequrus5pec" path="res://scripts/combat/Hurtbox.gd" id="2"]
-[ext_resource type="Script" uid="uid://bnigqj44udxyx" path="res://scripts/combat/Stats.gd" id="3"]
 [ext_resource type="Texture2D" uid="uid://byyxnmtbyrelq" path="res://assets/sprites/player/B_witch_idle.png" id="4"]
 [ext_resource type="Texture2D" uid="uid://bqu7mqggw0gng" path="res://assets/sprites/player/B_witch_run.png" id="5"]
 [ext_resource type="Texture2D" uid="uid://bf3a7lxonjtjs" path="res://assets/sprites/player/B_witch_take_damage.png" id="6"]
@@ -196,9 +194,6 @@ animations = [{
 radius = 5.0
 height = 18.0
 
-[sub_resource type="RectangleShape2D" id="hurt_shape"]
-size = Vector2(14, 23)
-
 [node name="Player" type="CharacterBody2D" unique_id=1881831291]
 collision_layer = 2
 script = ExtResource("1")
@@ -213,18 +208,6 @@ autoplay = "idle"
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1209743200]
 position = Vector2(0, 1)
 shape = SubResource("body_shape")
-
-[node name="Hurtbox" type="Area2D" parent="." unique_id=1254460063]
-collision_layer = 8
-collision_mask = 0
-script = ExtResource("2")
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=1242972276]
-position = Vector2(0, -1.5)
-shape = SubResource("hurt_shape")
-
-[node name="Stats" type="Node" parent="." unique_id=1686162625]
-script = ExtResource("3")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=965996802]
 zoom = Vector2(2, 2)

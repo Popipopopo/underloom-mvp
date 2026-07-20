@@ -7,7 +7,7 @@ func _process(_delta: float) -> void:
 	if GameState.equipped_wand != null:
 		var main_core: Core = GameState.equipped_wand.get_main_core()
 		if main_core != null:
-			wand_text = "%s %d/%d" % [main_core.display_name, main_core.current_ammo, main_core.max_ammo]
+			wand_text = "%s %d/%d" % [main_core.display_name, main_core.current_charges, main_core.max_charges]
 		else:
 			wand_text = "No main core"
 	label.text = "Main core: %s\nWorkshop: %s\nBackpack: %s" % [

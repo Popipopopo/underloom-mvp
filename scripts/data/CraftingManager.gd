@@ -19,7 +19,13 @@ extends RefCounted
 # ── Element resonance table ────────────────────────────────────────────────────
 # key: tuple string like "风x2" or "火+水"   value: resonance display name
 const ELEMENT_RESONANCES: Array = [
-	# Single-element thresholds (order: check dual combos first, then singles)
+	# Single-element thresholds (order: check dual combos first, then singles
+	# from highest threshold down — see _ordered_element_resonances)
+	# x1 微效果：保证任何 roll 都不是纯垃圾（v1.1 §2.4）
+	{"key": "风x1", "name": "微量提速"},
+	{"key": "水x1", "name": "微量减速"},
+	{"key": "火x1", "name": "微量火伤"},
+	{"key": "土x1", "name": "微量破防"},
 	{"key": "风x2", "name": "轻微追踪"},
 	{"key": "风x3", "name": "明显追踪/弹速提升"},
 	{"key": "风x4", "name": "暴风"},
@@ -54,12 +60,13 @@ const TAG_RESONANCES: Array = [
 
 # ── Quality table ─────────────────────────────────────────────────────────────
 const QUALITY_NAMES: Array = ["石", "铜", "银", "金"]
-# [element_retain_pts, resonance_retain_pts] per quality tier (index 0-3)
-const QUALITY_POINTS: Array = [
-	[2, 1],   # 石  lv 1-10
-	[3, 2],   # 铜  lv 11-20
-	[4, 3],   # 银  lv 21-30
-	[5, 4],   # 金  lv 31-40
+# 总点数 per quality tier (index 0-3)。
+# v1.1：玩家在干预开始前自主分配给「元素保留点」和「共鸣保留点」（allocate_points）
+const QUALITY_TOTAL_POINTS: Array = [
+	3,   # 石  lv 1-10
+	5,   # 铜  lv 11-20
+	7,   # 银  lv 21-30
+	9,   # 金  lv 31-40
 ]
 
 # ── Power/size labels ─────────────────────────────────────────────────────────
@@ -68,15 +75,24 @@ const POWER_LABELS: Array = ["小", "中小", "中", "大"]
 # ── State ─────────────────────────────────────────────────────────────────────
 var state: CraftingState = null
 
-# Step 2 output: Array of Dictionaries {element: String, mat_index: int, state: String}
-# state can be "active" / "locked" / "discarded"
+# v1.1 方案B：每个槽位在 set_slot 时立刻 roll，结果存这里（Array of Array[String]）。
+# 玩家入槽即见真实结果，换材料重掷该槽。所见即所得，后续不再有隐藏随机。
+var slot_rolls: Array = []
+
+# 干预池：Array of Dictionaries {element: String, mat_index: int, state: String}
+# state can be "inactive" / "locked"
 var rolled_elements: Array = []
 
 # Step 3 outputs
 var result_lv: int = 0
 var result_quality_index: int = 0    # 0=石 1=铜 2=银 3=金
+var total_pts: int = 0               # 由品质决定，玩家自主分配（v1.1 §2.4）
+var points_allocated: bool = false
 var element_retain_pts: int = 0
 var resonance_retain_pts: int = 0
+
+# 重炼：锁定的保留，未锁定的重掷。每次合成 1 次机会（v1.1 §2.4）
+var reroll_charges: int = 0
 
 # Step 5 state: which tag resonances the player has triggered
 var triggered_tag_resonances: Array[String] = []
@@ -90,9 +106,15 @@ func set_recipe_by_id(id: String) -> bool:
 	if r == null:
 		return false
 	state = CraftingState.new(r)
+	slot_rolls.clear()
+	slot_rolls.resize(r.slot_count())
 	rolled_elements.clear()
 	triggered_tag_resonances.clear()
 	consumed_tags.clear()
+	points_allocated = false
+	element_retain_pts = 0
+	resonance_retain_pts = 0
+	reroll_charges = 0
 	return true
 
 ## Returns "" on success, error string on failure.
@@ -110,53 +132,52 @@ func set_slot(slot_index: int, mat_id: String) -> String:
 	if GameState.get_workshop_count(mat_id) <= 0:
 		return "not enough in workshop"
 	state.fills[slot_index] = mat_id
+	# 方案B：入槽立刻 roll 并保留结果（真实结果，非预览装饰）
+	slot_rolls[slot_index] = _roll_material(mat)
 	return ""
 
 func clear_slot(slot_index: int) -> void:
 	if state != null and slot_index >= 0 and slot_index < state.fills.size():
 		state.fills[slot_index] = ""
+		slot_rolls[slot_index] = null
+
+## 该槽位已 roll 出的元素（UI 显示用）；未填返回空数组
+func get_slot_roll(slot_index: int) -> Array:
+	if slot_index < 0 or slot_index >= slot_rolls.size() or slot_rolls[slot_index] == null:
+		return []
+	return slot_rolls[slot_index]
+
+## 单个材料的 roll：保底元素必出 1 个，其余每单位 50% 出
+func _roll_material(mat: CraftingMaterial) -> Array:
+	var result: Array = []
+	result.append(mat.default_element)
+	for el in mat.elements_max.keys():
+		var max_units: int = int(mat.elements_max[el])
+		var already: int = 1 if el == mat.default_element else 0
+		for _u in range(already, max_units):
+			if randi() % 2 == 0:
+				result.append(el)
+	return result
 
 func all_slots_filled() -> bool:
 	return state != null and state.all_filled()
 
-# ── Step 2: Roll elements ──────────────────────────────────────────────────────
+# ── Step 2: Assemble element pool ─────────────────────────────────────────────
 
-## Roll random elements for every filled slot. Populates rolled_elements.
+## v1.1：不再重新 roll——把入槽时已 roll 好的结果汇入干预池。
+## 也不再随机丢弃超上限部分（锁定数量本身受点数限制，池子只是选择广度）。
 ## Call this after all slots are filled.
 func roll_elements() -> void:
 	rolled_elements.clear()
 	if state == null:
 		return
-	var slot_count: int = state.recipe.slot_count()
-	var cap: int = slot_count * 2   # hard cap on total elements
-
-	var pool: Array = []
-	for i in slot_count:
-		var mat_id: String = str(state.fills[i])
-		var mat: CraftingMaterial = MaterialDB.get_material(mat_id)
-		if mat == null:
-			continue
-		# guarantee default_element ≥ 1
-		pool.append({"element": mat.default_element, "mat_index": i})
-		# roll extras
-		for el in mat.elements_max.keys():
-			var max_units: int = int(mat.elements_max[el])
-			# default already contributed 1 if this el == default
-			var already: int = 1 if el == mat.default_element else 0
-			for _u in range(already, max_units):
-				if randi() % 2 == 0:
-					pool.append({"element": el, "mat_index": i})
-
-	# If over cap, randomly discard surplus
-	while pool.size() > cap:
-		pool.remove_at(randi() % pool.size())
-
-	for entry in pool:
-		rolled_elements.append({
-			"element": entry["element"],
-			"mat_index": entry["mat_index"],
-			"state": "inactive"    # inactive(default) / locked
-		})
+	for i in state.recipe.slot_count():
+		for el in get_slot_roll(i):
+			rolled_elements.append({
+				"element": el,
+				"mat_index": i,
+				"state": "inactive"    # inactive(default) / locked
+			})
 
 # ── Step 3: Compute lv & quality ──────────────────────────────────────────────
 
@@ -192,8 +213,28 @@ func compute_lv() -> void:
 
 	# Quality tier  (explicit int cast silences integer-division warning)
 	result_quality_index = clampi(int(result_lv - 1) / 10, 0, 3)
-	element_retain_pts = QUALITY_POINTS[result_quality_index][0]
-	resonance_retain_pts = QUALITY_POINTS[result_quality_index][1]
+	total_pts = QUALITY_TOTAL_POINTS[result_quality_index]
+	# 点数由玩家在干预开始前自主分配（allocate_points），此处只重置
+	points_allocated = false
+	element_retain_pts = 0
+	resonance_retain_pts = 0
+	reroll_charges = 1
+
+## v1.1 §2.4：合成开始前，玩家把 total_pts 自主分配给两种保留点。
+## 想稳就多拿元素点，想赌 tag 组合就多拿共鸣点。
+## Returns "" on success, error string on failure.
+func allocate_points(elem_pts: int, res_pts: int) -> String:
+	if elem_pts < 0 or res_pts < 0:
+		return "points cannot be negative"
+	if elem_pts + res_pts != total_pts:
+		return "must allocate exactly %d points" % total_pts
+	element_retain_pts = elem_pts
+	resonance_retain_pts = res_pts
+	points_allocated = true
+	# 重新分配意味着重新开始干涉：清掉已有锁定，避免点数账目错乱
+	for entry in rolled_elements:
+		entry["state"] = "inactive"
+	return ""
 
 func get_quality_name() -> String:
 	return QUALITY_NAMES[result_quality_index]
@@ -242,6 +283,49 @@ func toggle_lock(element_index: int) -> bool:
 		return true
 	return false
 
+## v1.1 §2.4 重炼：锁定的元素保留，未锁定的按各材料的分布重新 roll。
+## 每次合成 reroll_charges 次机会。Returns true if reroll happened.
+func reroll_unlocked() -> bool:
+	if reroll_charges <= 0 or state == null:
+		return false
+	reroll_charges -= 1
+
+	var new_pool: Array = []
+	for i in state.recipe.slot_count():
+		var mat: CraftingMaterial = MaterialDB.get_material(str(state.fills[i]))
+		if mat == null:
+			continue
+		# 该槽已锁定的元素计数（这些保留，且占用对应元素的上限额度）
+		var locked_counts: Dictionary = {}
+		for entry in rolled_elements:
+			if entry["mat_index"] == i and entry["state"] == "locked":
+				var lel: String = entry["element"]
+				locked_counts[lel] = locked_counts.get(lel, 0) + 1
+				new_pool.append(entry)
+
+		# 保底元素：若没有锁定的保底，重掷后仍必出 1 个
+		var floor_counts: Dictionary = locked_counts.duplicate()
+		if int(floor_counts.get(mat.default_element, 0)) == 0:
+			new_pool.append({"element": mat.default_element, "mat_index": i, "state": "inactive"})
+			floor_counts[mat.default_element] = 1
+
+		# 剩余额度逐单位 50% 重掷
+		for el in mat.elements_max.keys():
+			var max_units: int = int(mat.elements_max[el])
+			for _u in range(int(floor_counts.get(el, 0)), max_units):
+				if randi() % 2 == 0:
+					new_pool.append({"element": el, "mat_index": i, "state": "inactive"})
+
+		# 同步该槽的 roll 记录（保持 get_slot_roll 与干预池一致）
+		var slot_els: Array = []
+		for entry in new_pool:
+			if entry["mat_index"] == i:
+				slot_els.append(entry["element"])
+		slot_rolls[i] = slot_els
+
+	rolled_elements = new_pool
+	return true
+
 ## Resonances currently triggered by locked elements (real-time feedback)
 func active_resonances() -> Array[String]:
 	var remaining_counts := count_locked_elements()
@@ -268,7 +352,14 @@ func _ordered_element_resonances() -> Array:
 			duals.append(res)
 		else:
 			singles.append(res)
+	# 单元素按阈值从高到低检查：锁了 3 个风应触发 风x3 而不是被 风x2 抢走
+	singles.sort_custom(func(a, b) -> bool:
+		return _resonance_threshold(str(a["key"])) > _resonance_threshold(str(b["key"])))
 	return duals + singles
+
+func _resonance_threshold(key: String) -> int:
+	var parts: PackedStringArray = key.split("x")
+	return int(parts[1]) if parts.size() == 2 else 0
 
 func _resonance_requirements(key: String) -> Dictionary:
 	var req: Dictionary = {}
@@ -401,7 +492,7 @@ func build_core() -> Core:
 		"%s·%s" % [state.recipe.display_name, get_quality_name()],
 		"bullet",
 		damage_tier, range_tier, "small",
-		30,   # default ammo
+		30,   # default max_charges（可充能，回工作室恢复）
 		"",
 		0.3
 	)
