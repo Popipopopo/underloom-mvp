@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://ddh308tjfa56r"]
 
-[ext_resource type="Script" path="res://scripts/ui/CraftingScreen.gd" id="1"]
+[ext_resource type="Script" uid="uid://dg3bkbq0pntx8" path="res://scripts/ui/CraftingScreen.gd" id="1"]
 
-[node name="CraftingScreen" type="Control"]
+[node name="CraftingScreen" type="Control" unique_id=575861212]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

@@ -33,19 +33,27 @@ func _ready() -> void:
 
 
 # 调试：每次启动给工作室仓库一批材料，方便测合成（正式流程可关掉）
+# 包含各tag类别代表材料，保证三个合成槽（魔物/真菌/矿物）都有库存
 func _seed_debug_workshop_inventory() -> void:
 	var amounts := {
-		"firefly_crystal": 12,
-		"bolt_shard": 8,
-		"mana_dust": 12,
-		"spread_powder": 12,
-		"slime_gel": 12,
-		"mirror_shard": 10,
-		"fire_essence": 6,
+		# 魔物类
+		"史莱姆凝胶": 6,
+		"蝙蝠翼膜": 6,
+		"骷髅碎骨": 6,
+		# 真菌类
+		"白蘑菇": 6,
+		"发光菌": 6,
+		"温热孢子": 6,
+		# 矿物类
+		"火晶石": 6,
+		"冰蓝水晶": 6,
+		"风化石英": 6,
+		"地底黑曜石": 6,
+		"盐": 6,
 	}
 	for id in amounts.keys():
 		add_workshop_material(id, int(amounts[id]))
-	print("[GameState] Debug workshop stash: %s" % [str(workshop_inventory)])
+	print("[GameState] Debug workshop stash seeded with new materials")
 
 
 func _setup_test_loadout() -> void:

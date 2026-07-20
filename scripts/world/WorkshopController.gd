@@ -15,6 +15,17 @@ func _ready() -> void:
 		_craft_bench.body_entered.connect(_on_craft_bench_body_entered)
 	else:
 		push_error("workshop.tscn is missing a child Area2D named CraftBench.")
+	_setup_camera_limits()
+
+
+func _setup_camera_limits() -> void:
+	var cam: Camera2D = get_node_or_null("Player/Camera2D") as Camera2D
+	if cam == null:
+		return
+	cam.limit_left = -460
+	cam.limit_right = 388
+	cam.limit_bottom = 310
+	# limit_top 保持默认（不限制，露出灰色 OK）
 
 
 func _on_start_gate_body_entered(body: Node) -> void:

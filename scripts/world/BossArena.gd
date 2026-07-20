@@ -11,13 +11,13 @@ var _activated: bool = false
 
 func _ready() -> void:
 	super._ready()
-	_set_barrier_active(false)        # 启动时屏障不可见
+	call_deferred("_set_barrier_active", false)
 
 func _on_player_entered(_player: Node) -> void:
 	if _activated:
 		return
 	_activated = true
-	_set_barrier_active(true)
+	call_deferred("_set_barrier_active", true)
 
 	var boss: Node = _find_boss()
 	if boss == null:
@@ -27,7 +27,7 @@ func _on_player_entered(_player: Node) -> void:
 	boss.tree_exited.connect(_on_boss_died)
 
 func _on_boss_died() -> void:
-	_set_barrier_active(false)
+	call_deferred("_set_barrier_active", false)
 	print("[BossArena] Boss 死亡 → 屏障消失")
 
 # ────────────────────────────────────────────

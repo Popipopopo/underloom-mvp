@@ -33,6 +33,16 @@ var support_effect: String     # "amp" / "speed_up" / "multicast" / "split" / "h
 var support_value: float = 0.0
 
 # ────────────────────────────────────────────
+# 新合成系统附加字段
+# ────────────────────────────────────────────
+# 元素共鸣词条（如 ["冰弹", "轻微追踪"]），合成时写入
+var element_tags: Array[String] = []
+# Tag共鸣词条（如 ["鬼火"]），合成时写入
+var tag_words: Array[String] = []
+# 合成结果等级 1-40
+var result_lv: int = 0
+
+# ────────────────────────────────────────────
 # 弹药 API
 # ────────────────────────────────────────────
 func is_depleted() -> bool:

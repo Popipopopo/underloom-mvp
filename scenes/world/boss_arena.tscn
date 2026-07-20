@@ -2,12 +2,16 @@
 
 [ext_resource type="Script" uid="uid://thcb88o5t51k" path="res://scripts/world/BossArena.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/boss_slime.tscn" id="2_ltlcp"]
+[ext_resource type="PackedScene" uid="uid://bolijrb3yk86d" path="res://scenes/entities/player.tscn" id="3_vd7ed"]
 
 [sub_resource type="RectangleShape2D" id="room_shape"]
 size = Vector2(640, 360)
 
 [sub_resource type="RectangleShape2D" id="barrier_shape"]
 size = Vector2(16, 360)
+
+[sub_resource type="RectangleShape2D" id="ground_shape"]
+size = Vector2(640, 40)
 
 [node name="BossArena" type="Area2D" unique_id=609512621]
 collision_layer = 0
@@ -31,4 +35,18 @@ offset_right = 8.0
 offset_bottom = 180.0
 color = Color(0.55, 0.45, 0.95, 0.45)
 
+[node name="Ground" type="StaticBody2D" parent="." unique_id=1224302426]
+position = Vector2(0, 200)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ground" unique_id=1224302427]
+shape = SubResource("ground_shape")
+
+[node name="Visual" type="Polygon2D" parent="Ground" unique_id=1224302428]
+color = Color(0.35, 0.25, 0.15, 1)
+polygon = PackedVector2Array(-320, -20, 320, -20, 320, 20, -320, 20)
+
 [node name="BossSlime" parent="." unique_id=1288500779 instance=ExtResource("2_ltlcp")]
+
+[node name="Player" parent="." unique_id=1881831291 instance=ExtResource("3_vd7ed")]
+position = Vector2(-112, 4)

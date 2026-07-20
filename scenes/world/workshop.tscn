@@ -1,20 +1,29 @@
-[gd_scene format=3 uid="uid://ddh0vjck1rd0o"]
+[gd_scene format=4 uid="uid://ddh0vjck1rd0o"]
 
 [ext_resource type="PackedScene" uid="uid://bolijrb3yk86d" path="res://scenes/entities/player.tscn" id="1"]
 [ext_resource type="Script" uid="uid://ddd5o5enlrkpm" path="res://scripts/world/WorkshopController.gd" id="2"]
 [ext_resource type="Texture2D" uid="uid://dqtfy4rf26tyo" path="res://assets/sprites/background/bkg.png" id="2_by4ye"]
+[ext_resource type="TileSet" uid="uid://dekinhsgl0jr4" path="res://assets/tiles/xiaowanyi_tileset.tres" id="4_xwytset"]
 
 [sub_resource type="RectangleShape2D" id="ground_shape"]
-size = Vector2(900, 40)
+size = Vector2(849, 40)
 
 [sub_resource type="RectangleShape2D" id="gate_shape"]
 size = Vector2(120, 120)
 
+[sub_resource type="WorldBoundaryShape2D" id="WorldBoundaryShape2D_byds4"]
+normal = Vector2(1, 0)
+distance = -17.0
+
+[sub_resource type="WorldBoundaryShape2D" id="WorldBoundaryShape2D_m3eo0"]
+normal = Vector2(-1, 0)
+
 [node name="Workshop" type="Node2D" unique_id=1135767895]
 script = ExtResource("2")
+metadata/_edit_horizontal_guides_ = [310.0]
 
 [node name="Bkg" type="Sprite2D" parent="." unique_id=2009070715]
-position = Vector2(-247, 169)
+position = Vector2(-247, 176)
 texture = ExtResource("2_by4ye")
 
 [node name="Bkg" type="Sprite2D" parent="Bkg" unique_id=1107915810]
@@ -26,20 +35,22 @@ position = Vector2(0, 200)
 collision_mask = 0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Ground" unique_id=767928945]
-position = Vector2(-1, 42)
+position = Vector2(-35.5, 50)
 shape = SubResource("ground_shape")
 
 [node name="Visual" type="Polygon2D" parent="Ground" unique_id=646835777]
-position = Vector2(-1, 42)
-color = Color(0.25, 0.3, 0.38, 1)
-polygon = PackedVector2Array(-450, -20, 450, -20, 450, 20, -450, 20)
+position = Vector2(-9, 49)
+color = Color(0.39848, 0.51, 0.3009, 1)
+polygon = PackedVector2Array(-450, -20, 398, -19, 398, 2, 398, 20, 67.81818, 19.99997, -450, 20)
+
+[node name="Visual" type="Polygon2D" parent="Ground/Visual" unique_id=176050968]
+position = Vector2(0, 39)
+color = Color(0.36862746, 0.42352942, 0.29803923, 1)
+polygon = PackedVector2Array(-450, -20, 398, -19, 398, 2, 398, 20, 67.81818, 19.99997, -450, 20)
 
 [node name="Player" parent="." unique_id=499224174 instance=ExtResource("1")]
 position = Vector2(-287, 201)
 scale = Vector2(2, 2)
-
-[node name="Camera2D" type="Camera2D" parent="Player" unique_id=27603099]
-zoom = Vector2(2, 2)
 
 [node name="CraftBench" type="Area2D" parent="." unique_id=1999010101]
 position = Vector2(-400, 100)
@@ -71,3 +82,20 @@ offset_top = 10.0
 offset_right = 356.0
 offset_bottom = 33.0
 text = "Brown: crafting  |  Blue gate: start run"
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=150965581]
+scale = Vector2(2, 2)
+tile_map_data = PackedByteArray("AAD5/wcAAAAaAAEAAAD1/wYAAAAYAAAAAAD1/wcAAAAYAAEAAAD2/wYAAAAZAAAAAAD2/wcAAAAZAAEAAAD3/wYAAAAYAAAAAAD3/wcAAAAYAAEAAAD4/wYAAAAZAAAAAAD4/wcAAAAZAAEAAAD0/wYAAAAXAAAAAAD0/wcAAAAXAAEAAAD8/wcAAAAGAAMAAAD8/wgAAAAJAAEAAAD9/wcAAAAHAAMAAAD9/wgAAAAKAAEAAAD+/wcAAAALAAAAAAD+/wgAAAALAAEAAAD//wcAAAAMAAAAAAD//wgAAAAMAAEAAAAAAAcAAAANAAAAAAAAAAgAAAANAAEAAAABAAcAAAAOAAAAAAABAAgAAAAOAAEAAAACAAcAAAAPAAAAAAACAAgAAAAPAAEAAAADAAcAAAAQAAAAAAAEAAcAAAAIAAEAAAAEAAgAAAAJAAEAAAAFAAcAAAAKAAAAAAAFAAgAAAAKAAEAAAAGAAcAAAALAAAAAAAGAAgAAAALAAEAAAAHAAcAAAAMAAAAAAAHAAgAAAAMAAEAAAAIAAcAAAANAAAAAAAIAAgAAAANAAEAAAAJAAcAAAAOAAAAAAAJAAgAAAAOAAEAAAAKAAcAAAAPAAAAAAAKAAgAAAAPAAEAAAALAAcAAAAQAAAAAAD8/wQAAAAGAAAAAAD8/wUAAAAGAAEAAAD8/wYAAAAGAAIAAAD9/wQAAAAHAAAAAAD9/wUAAAAHAAEAAAD9/wYAAAAHAAIAAADy/wQAAAAHAAAAAADy/wUAAAAHAAEAAADy/wYAAAAHAAIAAADy/wcAAAAHAAMAAADz/wYAAAAWAAIAAADz/wcAAAAWAAMAAAABAAYAAAAIAAIAAAD5/wYAAAAaAAAAAAD4/wgAAAAJAAIAAAD5/wgAAAAKAAIAAAD6/wgAAAALAAIAAAD7/wgAAAAMAAIAAAD7/wcAAAAJAAMAAAAJAAUAAAAUAAAAAAAJAAYAAAAUAAEAAAAKAAUAAAAVAAAAAAAKAAYAAAAVAAEAAAALAAUAAAAWAAAAAAALAAYAAAAWAAEAAADy/wgAAAAUAAAAAADy/wkAAAAUAAEAAADz/wgAAAAVAAAAAADz/wkAAAAVAAEAAAD0/wgAAAAWAAAAAAD0/wkAAAAWAAEAAAALAAgAAAAIAAEAAAA=")
+tile_set = ExtResource("4_xwytset")
+
+[node name="leftwall" type="StaticBody2D" parent="." unique_id=1162057326]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="leftwall" unique_id=1541434467]
+position = Vector2(-442, 206)
+shape = SubResource("WorldBoundaryShape2D_byds4")
+
+[node name="rightwall" type="StaticBody2D" parent="." unique_id=1177722105]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="rightwall" unique_id=1784595280]
+position = Vector2(389, 188)
+shape = SubResource("WorldBoundaryShape2D_m3eo0")

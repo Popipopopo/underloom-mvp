@@ -1,29 +1,41 @@
 class_name CraftingMaterial
 extends RefCounted
 
-var id: String
-var display_name: String
-var description: String
-var tier: int = 1
-var slot_type: String = ""      # "damage" / "range" / "special" / "element"
-var contribution: int = 0
-var element: String = ""         # "fire" / "ice" / "lightning" / ""
+var id: String = ""
+var display_name: String = ""
+# tag list e.g. ["真菌", "食材"]
+var tags: Array[String] = []
+# element → max units  e.g. {"风": 2, "土": 1}
+var elements_max: Dictionary = {}
+# guaranteed element (at least 1 unit always rolls)
+var default_element: String = ""
+# level 1-40
+var lv: int = 1
 
 static func make(
 	p_id: String,
 	p_name: String,
-	p_desc: String,
-	p_tier: int,
-	p_slot_type: String,
-	p_contribution: int,
-	p_element: String = ""
+	p_tags: Array,
+	p_elements_max: Dictionary,
+	p_default_element: String,
+	p_lv: int
 ) -> CraftingMaterial:
 	var m := CraftingMaterial.new()
 	m.id = p_id
 	m.display_name = p_name
-	m.description = p_desc
-	m.tier = p_tier
-	m.slot_type = p_slot_type
-	m.contribution = p_contribution
-	m.element = p_element
+	for t in p_tags:
+		m.tags.append(str(t))
+	m.elements_max = p_elements_max.duplicate()
+	m.default_element = p_default_element
+	m.lv = p_lv
 	return m
+
+func has_tag(t: String) -> bool:
+	return tags.has(t)
+
+## Return a summary string for UI display
+func summary() -> String:
+	var el_parts: Array[String] = []
+	for k in elements_max.keys():
+		el_parts.append("%s×%d" % [k, elements_max[k]])
+	return "Lv%d  [%s]  元素:%s  保底:%s" % [lv, ", ".join(tags), ", ".join(el_parts), default_element]
