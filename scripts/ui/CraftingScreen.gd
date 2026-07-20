@@ -29,7 +29,6 @@ var _i_pts_lbl: Label = null
 var _i_dots: HFlowContainer = null
 var _i_el_res: VBoxContainer = null
 var _i_tags: VBoxContainer = null
-var _i_reroll: Button = null
 
 # ── UI 根节点 ─────────────────────────────────────────────────────────────────
 var _panel: Panel
@@ -198,36 +197,37 @@ func _show_step_1(slot_index: int) -> void:
 		_back_btn.text = "← 上一槽"
 		_back_btn.pressed.connect(_go_back_slot.bind(slot_index))
 
-	# 材料候选网格
-	var candidates: Array = MaterialDB.get_by_tag(slot_tag)
+	# 材料候选：仓库里带该 tag 的每一份实例一张卡（炼金工房式卡片背包），
+	# 元素在采集时已定型——卡上显示的就是实际元素，同名材料各卡可以不同
+	var candidates: Array = GameState.workshop_items_by_tag(slot_tag)
+	# 排除已被其他槽占用的实例
+	var used: Array = _manager.state.fills
+	candidates = candidates.filter(func(inst): return not used.has(inst))
 	if candidates.is_empty():
-		_add_label("没有符合条件的材料 [%s]" % slot_tag)
+		_add_label("仓库里没有符合条件的材料 [%s]" % slot_tag)
 		return
 
-	candidates.sort_custom(func(a, b): return (a as CraftingMaterial).lv < (b as CraftingMaterial).lv)
-
-	# 深浅图例（实测反馈：不解释会被当成 bug）
-	var legend := Label.new()
-	legend.text = "元素点：实色 = 保底必出　半透明 = 可能出（入槽时揭晓）"
-	legend.add_theme_font_size_override("font_size", 11)
-	legend.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
-	_content.add_child(legend)
+	candidates.sort_custom(func(a, b) -> bool:
+		var ma: CraftingMaterial = (a as MaterialInstance).base()
+		var mb: CraftingMaterial = (b as MaterialInstance).base()
+		if ma.lv != mb.lv:
+			return ma.lv < mb.lv
+		if ma.id != mb.id:
+			return ma.id < mb.id
+		return (a as MaterialInstance).elements.size() > (b as MaterialInstance).elements.size())
 
 	var flow := HFlowContainer.new()
 	flow.add_theme_constant_override("h_separation", 10)
 	flow.add_theme_constant_override("v_separation", 10)
 	_content.add_child(flow)
 
-	# v1.1 方案B：每种材料一张卡，显示元素"潜力"（上限），真实 roll 在入槽后
-	# 显示在上方槽位条里——入槽即所得，不满意可返回换材料重掷
-	for mat_obj in candidates:
-		var mat: CraftingMaterial = mat_obj as CraftingMaterial
-		var stock: int = GameState.get_workshop_count(mat.id)
-		var card := _make_item_card(mat, stock > 0)
+	for inst_obj in candidates:
+		var inst: MaterialInstance = inst_obj as MaterialInstance
+		var card := _make_item_card(inst)
 		flow.add_child(card)
 		var btn: Button = card.find_child("SelectBtn", true, false) as Button
-		if btn != null and stock > 0:
-			btn.pressed.connect(_on_material_selected.bind(slot_index, mat.id))
+		if btn != null:
+			btn.pressed.connect(_on_material_selected.bind(slot_index, inst))
 
 ## 重建槽位总览行
 func _update_slot_bar(active_slot: int) -> void:
@@ -246,9 +246,9 @@ func _update_slot_bar(active_slot: int) -> void:
 
 func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 	var recipe: Recipe = _manager.state.recipe
-	var filled_id: String = str(_manager.state.fills[slot_i]) if _manager.state.fills.size() > slot_i else ""
+	var filled_inst: MaterialInstance = _manager.state.fills[slot_i] if _manager.state.fills.size() > slot_i else null
 	var is_active: bool = slot_i == active_slot
-	var is_filled: bool = filled_id != ""
+	var is_filled: bool = filled_inst != null
 
 	var chip := PanelContainer.new()
 	chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -285,8 +285,8 @@ func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 	vbox.add_child(tag_lbl)
 
 	if is_filled:
-		# 已选材料名 + 真实 roll 结果（v1.1 方案B：入槽即所得）
-		var mat: CraftingMaterial = MaterialDB.get_material(filled_id)
+		# 已选实例：材料名 + 定型元素
+		var mat: CraftingMaterial = filled_inst.base()
 		if mat != null:
 			var name_lbl := Label.new()
 			name_lbl.text = mat.display_name
@@ -297,7 +297,7 @@ func _make_slot_chip(slot_i: int, active_slot: int) -> PanelContainer:
 			var el_row := HBoxContainer.new()
 			el_row.add_theme_constant_override("separation", 2)
 			el_row.alignment = BoxContainer.ALIGNMENT_CENTER
-			for el in _manager.get_slot_roll(slot_i):
+			for el in _manager.get_slot_elements(slot_i):
 				var dot := ColorRect.new()
 				dot.custom_minimum_size = Vector2(8, 8)
 				dot.color = EL_COLOR.get(el, EL_COLOR_DEFAULT)
@@ -327,20 +327,22 @@ func _go_back_slot(slot_index: int) -> void:
 	_current_slot = slot_index - 1
 	_show_step_1(_current_slot)
 
-## 单个材料格子（紧凑卡片，适合 flow 网格）
-## 元素点显示"潜力"：保底元素实色，其余可能出的元素半透明
-func _make_item_card(mat: CraftingMaterial, available: bool) -> PanelContainer:
+## 单份材料实例的卡片（炼金工房式：每张卡的元素在采集时已定型，
+## 卡上显示的就是实际元素，同名材料各卡可以不同）
+func _make_item_card(inst: MaterialInstance) -> PanelContainer:
+	var mat: CraftingMaterial = inst.base()
+
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(140, 0)
 
 	# 背景样式
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.16, 0.14, 0.22, 1.0) if available else Color(0.10, 0.10, 0.13, 1.0)
+	style.bg_color = Color(0.16, 0.14, 0.22, 1.0)
 	style.border_width_left   = 1
 	style.border_width_right  = 1
 	style.border_width_top    = 1
 	style.border_width_bottom = 1
-	style.border_color = Color(0.45, 0.38, 0.65, 1.0) if available else Color(0.28, 0.28, 0.35, 1.0)
+	style.border_color = Color(0.45, 0.38, 0.65, 1.0)
 	style.corner_radius_top_left     = 4
 	style.corner_radius_top_right    = 4
 	style.corner_radius_bottom_left  = 4
@@ -359,55 +361,44 @@ func _make_item_card(mat: CraftingMaterial, available: bool) -> PanelContainer:
 	var name_lbl := Label.new()
 	name_lbl.text = mat.display_name
 	name_lbl.add_theme_font_size_override("font_size", 13)
-	if not available:
-		name_lbl.add_theme_color_override("font_color", Color(0.45, 0.45, 0.45))
 	vbox.add_child(name_lbl)
 
 	var lv_lbl := Label.new()
-	lv_lbl.text = "Lv%d　库存 %d" % [mat.lv, GameState.get_workshop_count(mat.id)]
+	lv_lbl.text = "Lv%d" % mat.lv
 	lv_lbl.add_theme_font_size_override("font_size", 11)
 	lv_lbl.add_theme_color_override("font_color", Color(0.65, 0.65, 0.75))
 	vbox.add_child(lv_lbl)
 
-	# 元素点（小彩色方块）——显示潜力上限：保底 1 个实色，其余半透明表示"可能出"
+	# 元素点（小彩色方块）——这份实例的实际元素，全实色
 	var el_row := HBoxContainer.new()
 	el_row.add_theme_constant_override("separation", 3)
 	vbox.add_child(el_row)
-	var default_shown: bool = false
-	for el in mat.elements_max.keys():
-		for _j in range(int(mat.elements_max[el])):
-			var dot := ColorRect.new()
-			dot.custom_minimum_size = Vector2(10, 10)
-			var col: Color = EL_COLOR.get(el, EL_COLOR_DEFAULT) if available else Color(0.3, 0.3, 0.3)
-			if el == mat.default_element and not default_shown:
-				default_shown = true   # 保底那 1 个实色
-			else:
-				col.a = 0.4            # 其余是可能性
-			dot.color = col
-			el_row.add_child(dot)
+	for el in inst.elements:
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(10, 10)
+		dot.color = EL_COLOR.get(el, EL_COLOR_DEFAULT)
+		el_row.add_child(dot)
 
 	# tags（小字）
 	var tag_lbl := Label.new()
 	tag_lbl.text = " ".join(mat.tags)
 	tag_lbl.add_theme_font_size_override("font_size", 10)
-	tag_lbl.add_theme_color_override("font_color",
-		Color(0.5, 0.75, 0.5) if available else Color(0.35, 0.35, 0.35))
+	tag_lbl.add_theme_color_override("font_color", Color(0.5, 0.75, 0.5))
 	tag_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(tag_lbl)
 
 	# 选择按钮
 	var btn := Button.new()
 	btn.name = "SelectBtn"
-	btn.text = "选择" if available else "缺货"
-	btn.disabled = not available
+	btn.text = "选择"
 	btn.custom_minimum_size = Vector2(0, 28)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(btn)
 
 	return card
 
-func _on_material_selected(slot_index: int, mat_id: String) -> void:
-	var err: String = _manager.set_slot(slot_index, mat_id)
+func _on_material_selected(slot_index: int, inst: MaterialInstance) -> void:
+	var err: String = _manager.set_slot(slot_index, inst)
 	if err != "":
 		_add_label("错误: " + err)
 		return
@@ -416,7 +407,7 @@ func _on_material_selected(slot_index: int, mat_id: String) -> void:
 		_show_step_1(_current_slot)
 	else:
 		# All slots filled — 汇入元素池 + 算品质，直接进干涉工作台
-		_manager.roll_elements()
+		_manager.build_element_pool()
 		_manager.compute_lv()
 		_show_step_4()
 
@@ -457,11 +448,6 @@ func _show_step_4() -> void:
 	_i_dots.add_theme_constant_override("v_separation", 6)
 	left.add_child(_i_dots)
 
-	_i_reroll = Button.new()
-	_i_reroll.tooltip_text = "保留已点亮的元素，重新 roll 其余部分"
-	_i_reroll.pressed.connect(_on_reroll_pressed)
-	left.add_child(_i_reroll)
-
 	left.add_child(_make_cheat_sheet())
 
 	# 右栏：元素共鸣（实时）+ Tag 共鸣（触发）
@@ -496,11 +482,9 @@ func _show_step_4() -> void:
 
 	_refresh_interfere()
 
-## 干涉工作台整体刷新：点数、元素点阵、元素共鸣、Tag 共鸣、重炼按钮
+## 干涉工作台整体刷新：干涉点、元素点阵、元素共鸣、Tag 共鸣
 func _refresh_interfere() -> void:
-	_i_pts_lbl.text = "剩余点数：%d / %d" % [_manager.pts, _manager.total_pts]
-	_i_reroll.text = "🎲 重炼（剩 %d 次）" % _manager.reroll_charges
-	_i_reroll.disabled = _manager.reroll_charges <= 0
+	_i_pts_lbl.text = "剩余干涉点：%d / %d" % [_manager.pts, _manager.total_pts]
 
 	# 元素点阵
 	for ch in _i_dots.get_children():
@@ -592,10 +576,6 @@ func _on_element_dot_pressed(idx: int) -> void:
 	_manager.toggle_lock(idx)
 	_refresh_interfere()
 
-func _on_reroll_pressed() -> void:
-	if _manager.reroll_unlocked():
-		_refresh_interfere()
-
 func _on_trigger_tag_resonance(resonance_name: String) -> void:
 	var is_free: bool = not _first_tag_resonance_triggered
 	if _manager.trigger_tag_resonance(resonance_name, is_free) != "":
@@ -604,7 +584,6 @@ func _on_trigger_tag_resonance(resonance_name: String) -> void:
 	_refresh_interfere()
 
 func _on_interfere_confirm() -> void:
-	_manager.roll_remaining_elements()
 	_show_step_7()
 
 ## 元素效果小抄：不用背表，看着点

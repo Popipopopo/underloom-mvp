@@ -4,11 +4,12 @@ extends Node
 # 玩家全局状态（单例，由 autoload 加载）
 # ────────────────────────────────────────────
 
-# 材料分两处：
-# - workshop_inventory：工作室仓库，合成 Crafting 只认这里
-# - backpack：出门 / 局内背包；拾取进背包；回工作室时一次性并入 workshop，再清空
-var workshop_inventory: Dictionary = {}
-var backpack: Dictionary = {}
+# 材料库存（v1.1：炼金工房式卡片背包——每份材料是一个 MaterialInstance，
+# 元素在采集时已定型。同名材料的不同实例元素可以不同）
+# - workshop_items：工作室仓库，合成只认这里
+# - backpack_items：出门 / 局内背包；拾取进背包；回工作室时一次性并入仓库
+var workshop_items: Array = []   # Array[MaterialInstance]
+var backpack_items: Array = []   # Array[MaterialInstance]
 
 # 货币（Phase I 经济系统时启用）
 var gold: int = 0
@@ -17,43 +18,39 @@ var gold: int = 0
 var owned_cores: Array = []        # Array[Core]
 var owned_wands: Array = []        # Array[Wand]
 
-# 当前装备的魔杖（射击系统读这个）
+# 当前装备的魔杖
 var equipped_wand: Wand = null
 
 # ────────────────────────────────────────────
 # 启动时硬编码一套测试装备（M0 验证用，最小可玩）
-# - 1 根空 3 槽学徒杖
-# - 1 个最弱魔力弹主核（small/small/small，30 发弹药），装在槽 0
-# - 没有辅核，没有队列
-# 等 M3/M4 合成系统接通后这段会换成「玩家从空仓库起步」
+# 等节点地图采集接通后，仓库种子会换成真实采集流程
 # ────────────────────────────────────────────
 func _ready() -> void:
 	_setup_test_loadout()
 	_seed_debug_workshop_inventory()
 
 
-# 调试：每次启动给工作室仓库一批材料，方便测合成（正式流程可关掉）
-# 包含各tag类别代表材料，保证三个合成槽（魔物/真菌/矿物）都有库存
+# 调试：每种代表材料按三档丰度各 roll 两份，方便测合成时看到
+# "同名材料不同元素"的卡片效果（正式流程可关掉）
 func _seed_debug_workshop_inventory() -> void:
-	var amounts := {
+	var seed_ids := [
 		# 魔物类
-		"史莱姆凝胶": 6,
-		"蝙蝠翼膜": 6,
-		"骷髅碎骨": 6,
+		"史莱姆凝胶", "蝙蝠翼膜", "骷髅碎骨",
 		# 真菌类
-		"白蘑菇": 6,
-		"发光菌": 6,
-		"温热孢子": 6,
-		# 矿物类
-		"火晶石": 6,
-		"冰蓝水晶": 6,
-		"风化石英": 6,
-		"地底黑曜石": 6,
-		"盐": 6,
-	}
-	for id in amounts.keys():
-		add_workshop_material(id, int(amounts[id]))
-	print("[GameState] Debug workshop stash seeded with new materials")
+		"白蘑菇", "发光菌", "温热孢子",
+		# 矿物/结晶类
+		"火晶石", "冰蓝水晶", "风化石英", "地底黑曜石", "盐",
+	]
+	var richness_levels := [0.15, 0.5, 0.9]   # 贫瘠 / 普通 / 丰饶
+	for id in seed_ids:
+		var mat: CraftingMaterial = MaterialDB.get_material(id)
+		if mat == null:
+			push_warning("[GameState] seed material missing: %s" % id)
+			continue
+		for r in richness_levels:
+			for _i in 2:
+				workshop_items.append(MaterialInstance.roll_from(mat, r))
+	print("[GameState] Debug workshop seeded: %d material instances" % workshop_items.size())
 
 
 func _setup_test_loadout() -> void:
@@ -83,63 +80,53 @@ func _setup_test_loadout() -> void:
 # ────────────────────────────────────────────
 # 工作室仓库（合成用）
 # ────────────────────────────────────────────
-func add_workshop_material(id: String, count: int = 1) -> void:
-	workshop_inventory[id] = workshop_inventory.get(id, 0) + count
+func add_workshop_item(inst: MaterialInstance) -> void:
+	workshop_items.append(inst)
 
-func remove_workshop_material(id: String, count: int = 1) -> void:
-	var current: int = workshop_inventory.get(id, 0)
-	var after: int = current - count
-	if after <= 0:
-		workshop_inventory.erase(id)
-	else:
-		workshop_inventory[id] = after
+## Returns true if the instance was found and removed
+func remove_workshop_item(inst: MaterialInstance) -> bool:
+	var idx: int = workshop_items.find(inst)
+	if idx < 0:
+		return false
+	workshop_items.remove_at(idx)
+	return true
 
-func get_workshop_count(id: String) -> int:
-	return workshop_inventory.get(id, 0)
+## 仓库里带指定 tag 的所有实例（选材界面用）
+func workshop_items_by_tag(tag: String) -> Array:
+	var result: Array = []
+	for inst in workshop_items:
+		var mat: CraftingMaterial = (inst as MaterialInstance).base()
+		if mat != null and mat.has_tag(tag):
+			result.append(inst)
+	return result
 
-func has_workshop_material(id: String, count: int = 1) -> bool:
-	return get_workshop_count(id) >= count
+## 某种材料在仓库里有几份（HUD/图鉴用）
+func workshop_count_of(base_id: String) -> int:
+	var n: int = 0
+	for inst in workshop_items:
+		if (inst as MaterialInstance).base_id == base_id:
+			n += 1
+	return n
 
 # ────────────────────────────────────────────
 # 出门背包（局内）
 # ────────────────────────────────────────────
-func add_backpack_material(id: String, count: int = 1) -> void:
-	backpack[id] = backpack.get(id, 0) + count
+func add_backpack_item(inst: MaterialInstance) -> void:
+	backpack_items.append(inst)
 
-func remove_backpack_material(id: String, count: int = 1) -> void:
-	var current: int = backpack.get(id, 0)
-	var after: int = current - count
-	if after <= 0:
-		backpack.erase(id)
-	else:
-		backpack[id] = after
-
-func get_backpack_count(id: String) -> int:
-	return backpack.get(id, 0)
-
-# 出发前从仓库装进背包（之后做装箱 UI 时用）
-func try_transfer_workshop_to_backpack(id: String, count: int = 1) -> bool:
-	if get_workshop_count(id) < count:
+func remove_backpack_item(inst: MaterialInstance) -> bool:
+	var idx: int = backpack_items.find(inst)
+	if idx < 0:
 		return false
-	remove_workshop_material(id, count)
-	add_backpack_material(id, count)
-	return true
-
-# 局外把背包里的先倒回仓库（可选，做 UI 时用）
-func try_transfer_backpack_to_workshop(id: String, count: int = 1) -> bool:
-	if get_backpack_count(id) < count:
-		return false
-	remove_backpack_material(id, count)
-	add_workshop_material(id, count)
+	backpack_items.remove_at(idx)
 	return true
 
 # 回到工作室时：背包全部并入仓库后清空背包，所有核充能恢复（v1.1）
 func merge_backpack_into_workshop() -> void:
-	for k in backpack.keys():
-		workshop_inventory[k] = workshop_inventory.get(k, 0) + int(backpack[k])
-	backpack.clear()
+	workshop_items.append_array(backpack_items)
+	backpack_items.clear()
 	recharge_all_cores()
-	print("[GameState] Merged backpack into workshop; workshop=%s" % [str(workshop_inventory)])
+	print("[GameState] Merged backpack into workshop; %d items total" % workshop_items.size())
 
 # 所有核充能全满（回工作室时自动调用）
 func recharge_all_cores() -> void:

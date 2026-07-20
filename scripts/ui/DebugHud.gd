@@ -10,8 +10,8 @@ func _process(_delta: float) -> void:
 			wand_text = "%s %d/%d" % [main_core.display_name, main_core.current_charges, main_core.max_charges]
 		else:
 			wand_text = "No main core"
-	label.text = "Main core: %s\nWorkshop: %s\nBackpack: %s" % [
+	label.text = "Main core: %s\nWorkshop: %d items\nBackpack: %d items" % [
 		wand_text,
-		str(GameState.workshop_inventory),
-		str(GameState.backpack),
+		GameState.workshop_items.size(),
+		GameState.backpack_items.size(),
 	]

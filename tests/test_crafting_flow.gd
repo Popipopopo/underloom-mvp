@@ -1,14 +1,14 @@
 extends Node
 
-## 自动化冒烟测试：把 v1.1 合成流程完整跑一遍后退出。
+## 自动化冒烟测试：v1.1 实例化合成流程（采集时 roll、合成零随机）。
 ## 运行：godot --path . res://tests/test_crafting_flow.tscn
 
 var _fail_count: int = 0
 
 func _ready() -> void:
-	print("=== v1.1 crafting flow smoke test ===")
+	print("=== v1.1 crafting flow smoke test (instance model) ===")
+	_test_acquisition_roll()
 	_test_full_flow()
-	_test_reroll_keeps_locked()
 	_test_x1_and_threshold_order()
 	_test_ui_script_compiles()
 	if _fail_count == 0:
@@ -24,36 +24,60 @@ func _check(cond: bool, msg: String) -> void:
 		_fail_count += 1
 		printerr("  FAIL: " + msg)
 
-func _make_filled_manager() -> CraftingManager:
+## 造一份实例并放进工作室仓库
+func _spawn(id: String, richness: float) -> MaterialInstance:
+	var inst := MaterialInstance.roll_from(MaterialDB.get_material(id), richness)
+	GameState.add_workshop_item(inst)
+	return inst
+
+func _make_filled_manager(insts: Array) -> CraftingManager:
 	var m := CraftingManager.new()
 	m.set_recipe_by_id("魔力核")
-	var err1: String = m.set_slot(0, "史莱姆凝胶")   # 魔物
-	var err2: String = m.set_slot(1, "发光菌")       # 真菌
-	var err3: String = m.set_slot(2, "火晶石")       # 矿物
+	var err1: String = m.set_slot(0, insts[0])   # 魔物
+	var err2: String = m.set_slot(1, insts[1])   # 真菌
+	var err3: String = m.set_slot(2, insts[2])   # 矿物
 	assert(err1 == "" and err2 == "" and err3 == "")
 	return m
 
+func _test_acquisition_roll() -> void:
+	print("[test] acquisition roll (元素在采集时定型)")
+	var mat: CraftingMaterial = MaterialDB.get_material("发光菌")   # 风x2 土x2，保底风
+
+	var poor := MaterialInstance.roll_from(mat, 0.0)
+	_check(poor.elements == ["风"], "丰度 0 → 只有保底元素: %s" % str(poor.elements))
+
+	var rich := MaterialInstance.roll_from(mat, 1.0)
+	_check(rich.elements.size() == 4, "丰度 1 → 拉满上限 4 个: %s" % str(rich.elements))
+	_check(rich.elements.count("风") == 2 and rich.elements.count("土") == 2, "丰度 1 → 元素构成等于上限")
+
+	# 定型：入包后元素不再变化
+	var snapshot: Array = rich.elements.duplicate()
+	var m := CraftingManager.new()
+	m.set_recipe_by_id("魔力核")
+	m.set_slot(1, rich)
+	_check(rich.elements == snapshot, "入槽后实例元素不变（合成零随机）")
+
 func _test_full_flow() -> void:
 	print("[test] full flow")
-	var m := _make_filled_manager()
+	var i_slime := _spawn("史莱姆凝胶", 1.0)   # 魔物,液体  水x2
+	var i_fungus := _spawn("发光菌", 1.0)      # 真菌,幽影,发光  风x2土x2
+	var i_crystal := _spawn("火晶石", 1.0)     # 矿物,结晶,高温  火x2
+	var m := _make_filled_manager([i_slime, i_fungus, i_crystal])
 
-	# 方案B：入槽即有真实 roll，保底元素必在其中
-	_check(m.get_slot_roll(0).has("水"), "slot0 roll 含保底元素 水")
-	_check(m.get_slot_roll(1).has("风"), "slot1 roll 含保底元素 风")
-	_check(m.get_slot_roll(2).has("火"), "slot2 roll 含保底元素 火")
+	_check(m.get_slot_elements(0) == i_slime.elements, "槽 0 元素 = 实例定型元素")
 
-	# 汇入干预池：总数 = 三个槽 roll 之和（不再随机丢弃）
-	m.roll_elements()
-	var expected: int = m.get_slot_roll(0).size() + m.get_slot_roll(1).size() + m.get_slot_roll(2).size()
-	_check(m.rolled_elements.size() == expected, "干预池与槽位 roll 完全一致（无隐藏随机）")
+	# 汇入干预池：总数 = 三份实例元素之和，零随机
+	m.build_element_pool()
+	var expected: int = i_slime.elements.size() + i_fungus.elements.size() + i_crystal.elements.size()
+	_check(m.rolled_elements.size() == expected, "干预池与实例元素完全一致（8 个）: %d" % m.rolled_elements.size())
 
-	# 共享点数池（实测修订：锁定元素与 Tag 共鸣同池，无预分配）
+	# 干涉点池
 	m.compute_lv()
-	_check(m.total_pts > 0, "总点数 > 0（品质 %s，共 %d 点）" % [m.get_quality_name(), m.total_pts])
-	_check(m.pts == m.total_pts, "共享点数池初始化为总点数")
+	_check(m.total_pts > 0, "干涉点 > 0（品质 %s，共 %d 点）" % [m.get_quality_name(), m.total_pts])
+	_check(m.pts == m.total_pts, "共享干涉点池初始化为总点数")
 
 	# Tag 共鸣扣点：第一个免费，之后每个 1 点
-	# 该材料组合的可用共鸣固定：鬼火(发光+幽影)、沸腾(高温+液体)、熔岩核(矿物+高温)
+	# 该组合可用共鸣：鬼火(发光+幽影)、沸腾(高温+液体)、熔岩核(矿物+高温)
 	var pts_before: int = m.pts
 	_check(m.trigger_tag_resonance("鬼火", true) == "", "第一个 Tag 共鸣触发成功")
 	_check(m.pts == pts_before, "免费触发不扣点")
@@ -61,14 +85,14 @@ func _test_full_flow() -> void:
 	_check(m.pts == pts_before - 1, "付费触发扣 1 点")
 
 	# 锁定 + 结算
-	var before: int = GameState.get_workshop_count("史莱姆凝胶")
+	var count_before: int = GameState.workshop_count_of("史莱姆凝胶")
 	m.toggle_lock(0)
 	_check(m.pts == pts_before - 2, "锁定元素扣 1 点（与共鸣同池）")
 	var core: Core = m.build_core()
 	_check(core != null, "build_core 产出核")
 	_check(core.tag_words.has("鬼火") and core.tag_words.has("沸腾"), "Tag 词条写入成品")
 	_check(core.max_charges == 30 and core.current_charges == 30, "核带 30 充能")
-	_check(GameState.get_workshop_count("史莱姆凝胶") == before - 1, "材料被消耗")
+	_check(GameState.workshop_count_of("史莱姆凝胶") == count_before - 1, "材料实例被消耗")
 
 	# 可充能：耗掉再回家，应满
 	core.consume_charge(10)
@@ -76,39 +100,11 @@ func _test_full_flow() -> void:
 	GameState.merge_backpack_into_workshop()
 	_check(core.current_charges == 30, "回工作室后充能恢复")
 
-func _test_reroll_keeps_locked() -> void:
-	print("[test] reroll keeps locked")
-	var m := _make_filled_manager()
-	m.roll_elements()
-	m.compute_lv()
-	# 锁定第一个元素
-	m.toggle_lock(0)
-	var locked_el: String = m.rolled_elements[0]["element"]
-	_check(m.reroll_charges == 1, "初始 1 次重炼机会")
-	_check(m.reroll_unlocked(), "重炼执行成功")
-	_check(m.reroll_charges == 0, "重炼机会扣减")
-	_check(not m.reroll_unlocked(), "没机会时重炼被拒绝")
-	# 锁定的元素仍在池中且仍是 locked
-	var still_locked: bool = false
-	for entry in m.rolled_elements:
-		if entry["state"] == "locked" and entry["element"] == locked_el:
-			still_locked = true
-	_check(still_locked, "锁定元素在重炼后保留")
-	# 每槽保底元素依然存在
-	for i in 3:
-		var mat: CraftingMaterial = MaterialDB.get_material(str(m.state.fills[i]))
-		var found: bool = false
-		for entry in m.rolled_elements:
-			if entry["mat_index"] == i and entry["element"] == mat.default_element:
-				found = true
-		_check(found, "槽 %d 重炼后保底元素 %s 仍在" % [i, mat.default_element])
-
 func _test_x1_and_threshold_order() -> void:
 	print("[test] x1 micro effects & threshold order")
-	var m := _make_filled_manager()
-	m.roll_elements()
-	m.compute_lv()
-	# 手工构造锁定状态验证共鸣判定（绕过点数，直接改 state）
+	var m := CraftingManager.new()
+	m.set_recipe_by_id("魔力核")
+	# 手工构造锁定状态验证共鸣判定（直接改 rolled_elements）
 	m.rolled_elements = [
 		{"element": "风", "mat_index": 0, "state": "locked"},
 		{"element": "风", "mat_index": 1, "state": "locked"},

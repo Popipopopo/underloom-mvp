@@ -1,17 +1,14 @@
-## CraftingManager — pure logic layer for the new crafting system.
+## CraftingManager — pure logic layer for the crafting system.
 ##
+## v1.1 原设计：元素在采集时定型（MaterialInstance），合成阶段零随机。
 ## Flow the UI drives:
-##   1. set_recipe(id)
-##   2. set_slot(i, material_id) for each slot
-##   3. roll_elements()           → populates rolled_elements (Array of {element, mat_index})
-##   4. compute_lv()              → populates result_lv, result_quality, point budgets
-##   5. UI handles Step 4 (element interference) by calling:
-##        lock_element(idx) / discard_element(idx)
-##      and reading active_resonances for live feedback
-##   6. UI handles Step 5 (tag resonance) by calling:
-##        trigger_tag_resonance(resonance_id)
-##   7. roll_remaining_elements() → finalises element list
-##   8. build_core()              → consumes workshop materials, returns Core
+##   1. set_recipe_by_id(id)
+##   2. set_slot(i, instance) for each slot   ← 实例元素已定型，只做校验
+##   3. build_element_pool()                  → 汇总各槽实例元素为干预池
+##   4. compute_lv()                          → 品质 + 干涉点
+##   5. 干涉工作台：toggle_lock(idx)（锁定花点）+ trigger_tag_resonance()
+##      （第一个免费，之后花同一池的点），active_resonances 实时反馈
+##   6. build_core()                          → 消耗实例，返回 Core
 ##
 class_name CraftingManager
 extends RefCounted
@@ -60,8 +57,7 @@ const TAG_RESONANCES: Array = [
 
 # ── Quality table ─────────────────────────────────────────────────────────────
 const QUALITY_NAMES: Array = ["石", "铜", "银", "金"]
-# 总点数 per quality tier (index 0-3)。
-# v1.1：玩家在干预开始前自主分配给「元素保留点」和「共鸣保留点」（allocate_points）
+# 干涉点总量 per quality tier (index 0-3)，锁定元素和额外 Tag 共鸣共用
 const QUALITY_TOTAL_POINTS: Array = [
 	3,   # 石  lv 1-10
 	5,   # 铜  lv 11-20
@@ -75,12 +71,9 @@ const POWER_LABELS: Array = ["小", "中小", "中", "大"]
 # ── State ─────────────────────────────────────────────────────────────────────
 var state: CraftingState = null
 
-# v1.1 方案B：每个槽位在 set_slot 时立刻 roll，结果存这里（Array of Array[String]）。
-# 玩家入槽即见真实结果，换材料重掷该槽。所见即所得，后续不再有隐藏随机。
-var slot_rolls: Array = []
-
 # 干预池：Array of Dictionaries {element: String, mat_index: int, state: String}
 # state can be "inactive" / "locked"
+# 元素来自各槽实例的定型元素，无任何合成期随机
 var rolled_elements: Array = []
 
 # Step 3 outputs
@@ -91,8 +84,6 @@ var total_pts: int = 0               # 由品质决定
 # （2026-07-20 实测反馈：干涉合并为一屏后不再拆两种点、不再预分配）
 var pts: int = 0
 
-# 重炼：锁定的保留，未锁定的重掷。每次合成 1 次机会（v1.1 §2.4）
-var reroll_charges: int = 0
 
 # Step 5 state: which tag resonances the player has triggered
 var triggered_tag_resonances: Array[String] = []
@@ -106,72 +97,58 @@ func set_recipe_by_id(id: String) -> bool:
 	if r == null:
 		return false
 	state = CraftingState.new(r)
-	slot_rolls.clear()
-	slot_rolls.resize(r.slot_count())
 	rolled_elements.clear()
 	triggered_tag_resonances.clear()
 	consumed_tags.clear()
 	total_pts = 0
 	pts = 0
-	reroll_charges = 0
 	return true
 
 ## Returns "" on success, error string on failure.
-func set_slot(slot_index: int, mat_id: String) -> String:
+## 实例元素在采集时已定型，这里只做 tag 校验和占用检查。
+func set_slot(slot_index: int, inst: MaterialInstance) -> String:
 	if state == null:
 		return "no recipe"
 	if slot_index < 0 or slot_index >= state.recipe.slot_count():
 		return "bad slot index"
-	var mat: CraftingMaterial = MaterialDB.get_material(mat_id)
+	if inst == null:
+		return "no instance"
+	var mat: CraftingMaterial = inst.base()
 	if mat == null:
 		return "unknown material"
 	if not state.recipe.slot_accepts(slot_index, mat):
 		return "material tag [%s] doesn't match slot requirement [%s]" % [
 			", ".join(mat.tags), state.recipe.slot_tags[slot_index]]
-	if GameState.get_workshop_count(mat_id) <= 0:
-		return "not enough in workshop"
-	state.fills[slot_index] = mat_id
-	# 方案B：入槽立刻 roll 并保留结果（真实结果，非预览装饰）
-	slot_rolls[slot_index] = _roll_material(mat)
+	for f in state.fills:
+		if f == inst:
+			return "instance already used in another slot"
+	state.fills[slot_index] = inst
 	return ""
 
 func clear_slot(slot_index: int) -> void:
 	if state != null and slot_index >= 0 and slot_index < state.fills.size():
-		state.fills[slot_index] = ""
-		slot_rolls[slot_index] = null
+		state.fills[slot_index] = null
 
-## 该槽位已 roll 出的元素（UI 显示用）；未填返回空数组
-func get_slot_roll(slot_index: int) -> Array:
-	if slot_index < 0 or slot_index >= slot_rolls.size() or slot_rolls[slot_index] == null:
+## 该槽位实例的定型元素（UI 显示用）；未填返回空数组
+func get_slot_elements(slot_index: int) -> Array:
+	if state == null or slot_index < 0 or slot_index >= state.fills.size():
 		return []
-	return slot_rolls[slot_index]
-
-## 单个材料的 roll：保底元素必出 1 个，其余每单位 50% 出
-func _roll_material(mat: CraftingMaterial) -> Array:
-	var result: Array = []
-	result.append(mat.default_element)
-	for el in mat.elements_max.keys():
-		var max_units: int = int(mat.elements_max[el])
-		var already: int = 1 if el == mat.default_element else 0
-		for _u in range(already, max_units):
-			if randi() % 2 == 0:
-				result.append(el)
-	return result
+	var inst: MaterialInstance = state.fills[slot_index]
+	return inst.elements if inst != null else []
 
 func all_slots_filled() -> bool:
 	return state != null and state.all_filled()
 
 # ── Step 2: Assemble element pool ─────────────────────────────────────────────
 
-## v1.1：不再重新 roll——把入槽时已 roll 好的结果汇入干预池。
-## 也不再随机丢弃超上限部分（锁定数量本身受点数限制，池子只是选择广度）。
+## 把各槽实例的定型元素汇入干预池——合成阶段零随机。
 ## Call this after all slots are filled.
-func roll_elements() -> void:
+func build_element_pool() -> void:
 	rolled_elements.clear()
 	if state == null:
 		return
 	for i in state.recipe.slot_count():
-		for el in get_slot_roll(i):
+		for el in get_slot_elements(i):
 			rolled_elements.append({
 				"element": el,
 				"mat_index": i,
@@ -186,9 +163,9 @@ func compute_lv() -> void:
 	var slot_count: int = state.recipe.slot_count()
 	var lvs: Array[int] = []
 	for i in slot_count:
-		var mat: CraftingMaterial = MaterialDB.get_material(str(state.fills[i]))
-		if mat:
-			lvs.append(mat.lv)
+		var inst: MaterialInstance = state.fills[i]
+		if inst != null and inst.base() != null:
+			lvs.append(inst.base().lv)
 
 	if lvs.is_empty():
 		result_lv = 1
@@ -214,7 +191,6 @@ func compute_lv() -> void:
 	result_quality_index = clampi(int(result_lv - 1) / 10, 0, 3)
 	total_pts = QUALITY_TOTAL_POINTS[result_quality_index]
 	pts = total_pts
-	reroll_charges = 1
 
 func get_quality_name() -> String:
 	return QUALITY_NAMES[result_quality_index]
@@ -224,7 +200,7 @@ func get_power_label() -> String:
 
 # ── Step 4: Element interference UI helpers ────────────────────────────────────
 # Logic: all rolled elements start as "inactive" (grey, not counted).
-# Player spends element_retain_pts to "lock" (keep) elements.
+# Player spends 干涉点 (pts) to "lock" (keep) elements.
 # Only locked elements count toward resonances.
 
 ## How many elements are currently locked
@@ -262,49 +238,6 @@ func toggle_lock(element_index: int) -> bool:
 		pts -= 1
 		return true
 	return false
-
-## v1.1 §2.4 重炼：锁定的元素保留，未锁定的按各材料的分布重新 roll。
-## 每次合成 reroll_charges 次机会。Returns true if reroll happened.
-func reroll_unlocked() -> bool:
-	if reroll_charges <= 0 or state == null:
-		return false
-	reroll_charges -= 1
-
-	var new_pool: Array = []
-	for i in state.recipe.slot_count():
-		var mat: CraftingMaterial = MaterialDB.get_material(str(state.fills[i]))
-		if mat == null:
-			continue
-		# 该槽已锁定的元素计数（这些保留，且占用对应元素的上限额度）
-		var locked_counts: Dictionary = {}
-		for entry in rolled_elements:
-			if entry["mat_index"] == i and entry["state"] == "locked":
-				var lel: String = entry["element"]
-				locked_counts[lel] = locked_counts.get(lel, 0) + 1
-				new_pool.append(entry)
-
-		# 保底元素：若没有锁定的保底，重掷后仍必出 1 个
-		var floor_counts: Dictionary = locked_counts.duplicate()
-		if int(floor_counts.get(mat.default_element, 0)) == 0:
-			new_pool.append({"element": mat.default_element, "mat_index": i, "state": "inactive"})
-			floor_counts[mat.default_element] = 1
-
-		# 剩余额度逐单位 50% 重掷
-		for el in mat.elements_max.keys():
-			var max_units: int = int(mat.elements_max[el])
-			for _u in range(int(floor_counts.get(el, 0)), max_units):
-				if randi() % 2 == 0:
-					new_pool.append({"element": el, "mat_index": i, "state": "inactive"})
-
-		# 同步该槽的 roll 记录（保持 get_slot_roll 与干预池一致）
-		var slot_els: Array = []
-		for entry in new_pool:
-			if entry["mat_index"] == i:
-				slot_els.append(entry["element"])
-		slot_rolls[i] = slot_els
-
-	rolled_elements = new_pool
-	return true
 
 ## Resonances currently triggered by locked elements (real-time feedback)
 func active_resonances() -> Array[String]:
@@ -373,13 +306,15 @@ func _consume_requirements(remaining_counts: Dictionary, req: Dictionary) -> voi
 
 # ── Step 5: Tag resonance ──────────────────────────────────────────────────────
 
-## Collect all unique tags from placed materials
+## Collect all unique tags from placed material instances
 func collect_all_tags() -> Array[String]:
 	var tag_set: Array[String] = []
 	if state == null:
 		return tag_set
-	for mat_id in state.fills:
-		var mat: CraftingMaterial = MaterialDB.get_material(str(mat_id))
+	for inst in state.fills:
+		if inst == null:
+			continue
+		var mat: CraftingMaterial = (inst as MaterialInstance).base()
 		if mat == null:
 			continue
 		for t in mat.tags:
@@ -392,8 +327,10 @@ func get_tag_providers(tag: String) -> Array[String]:
 	var names: Array[String] = []
 	if state == null:
 		return names
-	for mat_id in state.fills:
-		var mat: CraftingMaterial = MaterialDB.get_material(str(mat_id))
+	for inst in state.fills:
+		if inst == null:
+			continue
+		var mat: CraftingMaterial = (inst as MaterialInstance).base()
 		if mat != null and mat.has_tag(tag) and not names.has(mat.display_name):
 			names.append(mat.display_name)
 	return names
@@ -440,11 +377,7 @@ func trigger_tag_resonance(resonance_name: String, first_trigger_free: bool) -> 
 	return ""
 
 # ── Step 6: Finalise elements ─────────────────────────────────────────────────
-# New logic: only locked elements survive. Inactive = discarded.
-# No random roll needed — player already made explicit choices with retain pts.
-
-func roll_remaining_elements() -> void:
-	pass   # No-op: player's lock choices ARE the final result
+# Only locked elements survive. Inactive = discarded.
 
 ## Final list = only locked elements
 func final_elements() -> Array[String]:
@@ -456,15 +389,15 @@ func final_elements() -> Array[String]:
 
 # ── Step 7: Build Core ────────────────────────────────────────────────────────
 
-## Consume workshop materials and return a new Core.
+## Consume workshop material instances and return a new Core.
 ## Call after all UI steps are complete.
 func build_core() -> Core:
 	if state == null or not state.all_filled():
 		return null
 
-	# Consume materials from workshop
-	for mat_id in state.fills:
-		GameState.remove_workshop_material(str(mat_id), 1)
+	# Consume material instances from workshop
+	for inst in state.fills:
+		GameState.remove_workshop_item(inst)
 
 	var el_tags := triggered_element_resonances()
 	var tag_words := triggered_tag_resonances.duplicate()
