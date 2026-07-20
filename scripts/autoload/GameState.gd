@@ -20,6 +20,24 @@ var owned_items: Array = []        # Array[Core]
 var owned_cores: Array = []        # Array[Core]
 var owned_wands: Array = []        # Array[Wand]
 
+# ── 远征状态(CE1 六边形地图,跨场景常驻)────────────────────────
+const BACKPACK_CAP := 20
+var expedition_active: bool = false
+var expedition_map: Dictionary = {}      # {"q,r": {type, revealed, used}}
+var expedition_player: Vector2i = Vector2i.ZERO
+var expedition_layer: int = 1
+var pending_encounter: String = ""       # 遭遇战格 key(战斗返回后标记已用)
+
+func is_backpack_full() -> bool:
+	return backpack_items.size() >= BACKPACK_CAP
+
+## 结束远征:背包并入仓库,清远征状态
+func end_expedition() -> void:
+	merge_backpack_into_workshop()
+	expedition_active = false
+	expedition_map.clear()
+	pending_encounter = ""
+
 # 当前装备的魔杖
 var equipped_wand: Wand = null
 

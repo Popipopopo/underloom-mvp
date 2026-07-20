@@ -31,12 +31,12 @@ func _setup_camera_limits() -> void:
 func _on_start_gate_body_entered(body: Node) -> void:
 	if body == null or not body.is_in_group("player"):
 		return
-	# MVP:出门先直接进遭遇战(CE1 节点地图接入前的临时入口)
-	call_deferred("_enter_battle")
+	# 出门 = 开始一次远征,进入 CE1 六边形地图
+	call_deferred("_enter_map")
 
 
-func _enter_battle() -> void:
-	get_tree().change_scene_to_file("res://scenes/world/battle.tscn")
+func _enter_map() -> void:
+	get_tree().change_scene_to_file("res://scenes/world/map.tscn")
 
 
 func _on_craft_bench_body_entered(body: Node) -> void:
