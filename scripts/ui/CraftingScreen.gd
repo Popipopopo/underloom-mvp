@@ -140,7 +140,7 @@ func _clear_content() -> void:
 func _show_step_0() -> void:
 	_current_step = 0
 	_clear_content()
-	_title_label.text = "魔力核 — 要做什么呢"
+	_title_label.text = "炼成 — 要做什么呢"
 	_slot_bar.visible = false
 	_back_btn.visible = false
 	# 断开之前绑的信号
@@ -159,11 +159,19 @@ func _show_step_0() -> void:
 		btn.custom_minimum_size = Vector2(0, 44)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var sub := Label.new()
-		sub.text = "槽位: " + " / ".join(recipe.slot_tags)
+		sub.text = "[%s] 槽位: %s" % [_product_type_cn(recipe.product_type), " / ".join(recipe.slot_tags)]
 		sub.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
 		sub.add_theme_font_size_override("font_size", 12)
 		_content.add_child(btn)
 		_content.add_child(sub)
+		# 招牌目标常驻显示(明确目标,凑够才解锁)
+		if not recipe.signature.is_empty():
+			var sig := Label.new()
+			sig.text = "　★招牌「%s」：%s" % [recipe.signature.get("name", ""), recipe.signature.get("effect", "")]
+			sig.add_theme_color_override("font_color", Color(0.85, 0.75, 0.4))
+			sig.add_theme_font_size_override("font_size", 11)
+			sig.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_content.add_child(sig)
 		btn.pressed.connect(_on_recipe_chosen.bind(recipe.id))
 
 func _on_recipe_chosen(recipe_id: String) -> void:
@@ -484,7 +492,12 @@ func _show_step_4() -> void:
 
 ## 干涉工作台整体刷新：干涉点、元素点阵、元素共鸣、Tag 共鸣
 func _refresh_interfere() -> void:
-	_i_pts_lbl.text = "剩余干涉点：%d / %d" % [_manager.pts, _manager.total_pts]
+	var sig_line := ""
+	if not _manager.state.recipe.signature.is_empty():
+		var unlocked: bool = bool(_manager.check_signature()["unlocked"])
+		var mark := "✅ 已解锁" if unlocked else "⬜ 未达成"
+		sig_line = "\n★招牌 %s  %s" % [_manager.signature_hint(), mark]
+	_i_pts_lbl.text = "剩余干涉点：%d / %d%s" % [_manager.pts, _manager.total_pts, sig_line]
 
 	# 元素点阵
 	for ch in _i_dots.get_children():
@@ -635,7 +648,7 @@ func _show_step_7() -> void:
 	_clear_content()
 	_title_label.text = "合成结果"
 
-	var core: Core = _manager.build_core()
+	var core: Core = _manager.build_product()
 	if core == null:
 		_add_label("合成失败（材料不足？）")
 		return
@@ -652,26 +665,25 @@ func _show_step_7() -> void:
 		"金": banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
 	_content.add_child(banner)
 
+	_add_result_row("类型", _product_type_cn(core.product_type))
 	_add_result_row("品质", "%s  Lv%d" % [_manager.get_quality_name(), core.result_lv])
-	_add_result_row("威力 / 直径", _manager.get_power_label())
+	if core.is_consumable():
+		_add_result_row("使用次数", str(core.max_uses))
 
-	# Element resonances
-	var el_res: Array[String] = _manager.triggered_element_resonances()
-	if el_res.is_empty():
-		_add_result_row("元素词条", "（无）")
-	else:
-		_add_result_row("元素词条", ", ".join(el_res))
+	# 解读镜头:这些元素在本产物里是什么效果
+	if not core.element_effects.is_empty():
+		_add_result_row("效果(%s)" % _product_type_cn(core.product_type), "；".join(core.element_effects))
 
-	# Tag words
-	if core.tag_words.is_empty():
-		_add_result_row("Tag词条", "（无）")
-	else:
+	# 元素共鸣 + Tag 共鸣(通用词条)
+	if not core.element_tags.is_empty():
+		_add_result_row("元素共鸣", ", ".join(core.element_tags))
+	if not core.tag_words.is_empty():
 		_add_result_row("Tag词条", ", ".join(core.tag_words))
 
-	# Final elements breakdown
-	var final_el: Array[String] = _manager.final_elements()
-	if not final_el.is_empty():
-		_add_result_row("最终元素", ", ".join(final_el))
+	# 招牌效果
+	if core.signature_name != "":
+		var sig_val: String = "★ 已解锁！%s" % _manager.state.recipe.signature.get("effect", "") if core.signature_unlocked else "☆ 未解锁（%s）" % core.signature_name
+		_add_result_row("招牌", sig_val)
 
 	_content.add_child(HSeparator.new())
 
@@ -679,6 +691,14 @@ func _show_step_7() -> void:
 	again_btn.text = "再合成一个"
 	again_btn.pressed.connect(_show_step_0)
 	_content.add_child(again_btn)
+
+func _product_type_cn(pt: String) -> String:
+	match pt:
+		"core": return "核"
+		"potion": return "药剂"
+		"charm": return "护符"
+		"trade": return "交易品"
+	return pt
 
 func _add_result_row(label: String, value: String) -> void:
 	var row := HBoxContainer.new()

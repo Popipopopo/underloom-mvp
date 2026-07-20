@@ -14,7 +14,9 @@ var backpack_items: Array = []   # Array[MaterialInstance]
 # 货币（Phase I 经济系统时启用）
 var gold: int = 0
 
-# 已合成的核与已收集的魔杖
+# 合成产物(核/药/护符/交易品,统一 Core-typed)
+var owned_items: Array = []        # Array[Core]
+# 装备槽相关(测试装备/未来战斗)
 var owned_cores: Array = []        # Array[Core]
 var owned_wands: Array = []        # Array[Wand]
 
@@ -69,12 +71,12 @@ func _setup_test_loadout() -> void:
 	owned_wands.append(wand)
 	equipped_wand = wand
 
-	print("[GameState] 测试装备：%s（%d 槽）+ %s（%d/%d 充能）" % [
+	print("[GameState] 测试装备：%s（%d 槽）+ %s（%d/%d 使用次数）" % [
 		equipped_wand.display_name,
 		equipped_wand.slot_count,
 		bullet.display_name,
-		bullet.current_charges,
-		bullet.max_charges,
+		bullet.current_uses,
+		bullet.max_uses,
 	])
 
 # ────────────────────────────────────────────
@@ -121,14 +123,9 @@ func remove_backpack_item(inst: MaterialInstance) -> bool:
 	backpack_items.remove_at(idx)
 	return true
 
-# 回到工作室时：背包全部并入仓库后清空背包，所有核充能恢复（v1.1）
+# 回到工作室时：背包全部并入仓库后清空背包
+# (v1.1:核是消耗品,用完销毁,不再有"回工作室充能"这一步)
 func merge_backpack_into_workshop() -> void:
 	workshop_items.append_array(backpack_items)
 	backpack_items.clear()
-	recharge_all_cores()
 	print("[GameState] Merged backpack into workshop; %d items total" % workshop_items.size())
-
-# 所有核充能全满（回工作室时自动调用）
-func recharge_all_cores() -> void:
-	for c in owned_cores:
-		(c as Core).recharge_full()

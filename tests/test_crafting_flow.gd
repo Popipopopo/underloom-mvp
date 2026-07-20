@@ -10,6 +10,7 @@ func _ready() -> void:
 	_test_acquisition_roll()
 	_test_full_flow()
 	_test_x1_and_threshold_order()
+	_test_signature_and_lens()
 	_test_ui_script_compiles()
 	if _fail_count == 0:
 		print("=== ALL TESTS PASSED ===")
@@ -88,17 +89,20 @@ func _test_full_flow() -> void:
 	var count_before: int = GameState.workshop_count_of("史莱姆凝胶")
 	m.toggle_lock(0)
 	_check(m.pts == pts_before - 2, "锁定元素扣 1 点（与共鸣同池）")
-	var core: Core = m.build_core()
-	_check(core != null, "build_core 产出核")
+	var core: Core = m.build_product()
+	_check(core != null, "build_product 产出产物")
+	_check(core.product_type == "core", "魔力核产物类型 = core")
 	_check(core.tag_words.has("鬼火") and core.tag_words.has("沸腾"), "Tag 词条写入成品")
-	_check(core.max_charges == 30 and core.current_charges == 30, "核带 30 充能")
+	_check(core.max_uses == 5, "魔力核=消耗品,5 次使用")
+	_check(not core.element_effects.is_empty(), "解读镜头效果已写入")
 	_check(GameState.workshop_count_of("史莱姆凝胶") == count_before - 1, "材料实例被消耗")
+	_check(GameState.owned_items.has(core), "产物入 owned_items")
 
-	# 可充能：耗掉再回家，应满
-	core.consume_charge(10)
-	_check(core.current_charges == 20, "consume_charge 生效")
-	GameState.merge_backpack_into_workshop()
-	_check(core.current_charges == 30, "回工作室后充能恢复")
+	# 消耗品:用一次减一次,用完销毁(is_depleted)
+	core.consume_use(1)
+	_check(core.current_uses == 4, "consume_use 生效")
+	core.consume_use(4)
+	_check(core.is_depleted(), "用完后 is_depleted")
 
 func _test_x1_and_threshold_order() -> void:
 	print("[test] x1 micro effects & threshold order")
@@ -125,6 +129,55 @@ func _test_x1_and_threshold_order() -> void:
 	]
 	res = m.active_resonances()
 	_check(res.has("蒸汽弹"), "火+水 双元素共鸣优先: %s" % str(res))
+
+## 招牌门槛检测 + 解读镜头(本轮核心)
+func _test_signature_and_lens() -> void:
+	print("[test] signature & lens")
+	var m := CraftingManager.new()
+
+	# 魔力核·共鸣:单元素满 6
+	m.set_recipe_by_id("魔力核")
+	m.rolled_elements = _locked("火", 6)
+	_check(m.check_signature()["unlocked"], "魔力核 6火 → 共鸣解锁")
+	m.rolled_elements = _locked("火", 5)
+	_check(not m.check_signature()["unlocked"], "魔力核 5火 → 共鸣未达成")
+
+	# 轰鸣核·过载:容量满 8(4槽)
+	m.set_recipe_by_id("轰鸣核")
+	m.rolled_elements = _locked("火", 8)
+	_check(m.check_signature()["unlocked"], "轰鸣核 满8 → 过载解锁")
+	m.rolled_elements = _locked("火", 7)
+	_check(not m.check_signature()["unlocked"], "轰鸣核 7 → 过载未达成")
+
+	# 速凝核·连射:容量满 4(它做不出过载,因为容量只有4)
+	m.set_recipe_by_id("速凝核")
+	m.rolled_elements = _locked("风", 4)
+	var s := m.check_signature()
+	_check(s["unlocked"] and s["name"] == "连射", "速凝核 满4 → 连射解锁(名字对)")
+
+	# 回复药·回魂:指定元素 水 满 4
+	m.set_recipe_by_id("回复药")
+	m.rolled_elements = _locked("水", 4)
+	_check(m.check_signature()["unlocked"], "回复药 4水 → 回魂解锁")
+	m.rolled_elements = _locked("火", 4)
+	_check(not m.check_signature()["unlocked"], "回复药 4火 → 回魂未解锁(要水)")
+
+	# 解读镜头:同样的火,在药里翻译成"温热"
+	var joined := ", ".join(m.interpreted_effects())
+	_check(joined.contains("温热"), "回复药里 火→温热: %s" % joined)
+
+	# 护符·元素壁垒:单元素满 4
+	m.set_recipe_by_id("护符")
+	m.rolled_elements = _locked("土", 4)
+	_check(m.check_signature()["unlocked"], "护符 4土 → 元素壁垒解锁")
+	# 护符镜头:土翻译成防御
+	_check(", ".join(m.interpreted_effects()).contains("坚岩"), "护符里 土→坚岩·防御")
+
+func _locked(el: String, n: int) -> Array:
+	var a: Array = []
+	for _i in n:
+		a.append({"element": el, "mat_index": 0, "state": "locked"})
+	return a
 
 func _test_ui_script_compiles() -> void:
 	print("[test] CraftingScreen loads & instantiates")

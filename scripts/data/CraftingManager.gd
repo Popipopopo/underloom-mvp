@@ -68,6 +68,14 @@ const QUALITY_TOTAL_POINTS: Array = [
 # ── Power/size labels ─────────────────────────────────────────────────────────
 const POWER_LABELS: Array = ["小", "中小", "中", "大"]
 
+# ── 解读镜头:同一元素,不同产物类型翻译成不同效果(基础配方表 §2)─────────────
+const LENS: Dictionary = {
+	"core":   {"火": "爆炸/燃烧",     "水": "减速/冻结",     "风": "追踪/提速",   "土": "穿透/击退"},
+	"potion": {"火": "温热·回血+解冻", "水": "清凉·回血+解灼烧", "风": "提神·回MP",   "土": "滋养·回血++"},
+	"charm":  {"火": "火焰抗性",       "水": "冰霜抗性",       "风": "疾风·闪避",   "土": "坚岩·防御"},
+	"trade":  {"火": "赤红光泽",       "水": "澄澈光泽",       "风": "流光光泽",   "土": "厚重质感"},
+}
+
 # ── State ─────────────────────────────────────────────────────────────────────
 var state: CraftingState = null
 
@@ -387,11 +395,74 @@ func final_elements() -> Array[String]:
 			result.append(entry["element"])
 	return result
 
-# ── Step 7: Build Core ────────────────────────────────────────────────────────
+# ── 招牌效果检测(仅此配方能出,元素数量门槛)───────────────────────────────────
 
-## Consume workshop material instances and return a new Core.
-## Call after all UI steps are complete.
-func build_core() -> Core:
+## 检测当前锁定元素是否达到本配方招牌门槛。
+## 返回 {name, effect, unlocked}(无招牌定义返回 unlocked=false)。
+func check_signature() -> Dictionary:
+	var out := {"name": "", "effect": "", "unlocked": false}
+	if state == null or state.recipe.signature.is_empty():
+		return out
+	var sig: Dictionary = state.recipe.signature
+	out["name"] = str(sig.get("name", ""))
+	out["effect"] = str(sig.get("effect", ""))
+	var kind: String = str(sig.get("threshold", ""))
+	var counts := count_locked_elements()
+	match kind:
+		"capacity_full":
+			out["unlocked"] = locked_count() >= state.recipe.element_capacity()
+		"single_element":
+			var need: int = int(sig.get("value", 0))
+			for el in counts.keys():
+				if int(counts[el]) >= need:
+					out["unlocked"] = true
+					break
+		"element_full":
+			var el: String = str(sig.get("element", ""))
+			out["unlocked"] = int(counts.get(el, 0)) >= int(sig.get("value", 0))
+	return out
+
+## 招牌进度提示(UI 显示"目标"用),如 "过载 3/8" 或 "共鸣 火 4/6"
+func signature_hint() -> String:
+	if state == null or state.recipe.signature.is_empty():
+		return ""
+	var sig: Dictionary = state.recipe.signature
+	var name: String = str(sig.get("name", ""))
+	var counts := count_locked_elements()
+	match str(sig.get("threshold", "")):
+		"capacity_full":
+			return "%s %d/%d" % [name, locked_count(), state.recipe.element_capacity()]
+		"single_element":
+			var need: int = int(sig.get("value", 0))
+			var best_el := ""
+			var best := 0
+			for el in counts.keys():
+				if int(counts[el]) > best:
+					best = int(counts[el]); best_el = el
+			return "%s %s%d/%d" % [name, best_el, best, need]
+		"element_full":
+			var el: String = str(sig.get("element", ""))
+			return "%s %s%d/%d" % [name, el, int(counts.get(el, 0)), int(sig.get("value", 0))]
+	return name
+
+# ── 解读镜头:按产物类型把锁定元素翻译成效果描述 ─────────────────────────────────
+
+func interpreted_effects() -> Array[String]:
+	var out: Array[String] = []
+	if state == null:
+		return out
+	var lens: Dictionary = LENS.get(state.recipe.product_type, LENS["core"])
+	var counts := count_locked_elements()
+	for el in counts.keys():
+		var desc: String = str(lens.get(el, el))
+		out.append("%s×%d → %s" % [el, int(counts[el]), desc])
+	return out
+
+# ── Step 7: Build product ─────────────────────────────────────────────────────
+
+## Consume workshop material instances and return a new product (Core-typed).
+## 产物类型由配方决定;应用解读镜头 + 招牌检测。Call after all UI steps.
+func build_product() -> Core:
 	if state == null or not state.all_filled():
 		return null
 
@@ -399,30 +470,30 @@ func build_core() -> Core:
 	for inst in state.fills:
 		GameState.remove_workshop_item(inst)
 
-	var el_tags := triggered_element_resonances()
-	var tag_words := triggered_tag_resonances.duplicate()
-	var power_label := get_power_label()
-
-	# Map power → damage_tier, diameter → range_tier (same scale for now)
-	var tier_map: Dictionary = {"小": "small", "中小": "small", "中": "medium", "大": "large"}
-	var damage_tier: String = tier_map.get(power_label, "small")
-	var range_tier: String = damage_tier
-
+	var recipe: Recipe = state.recipe
 	var uid: int = int(Time.get_ticks_msec()) + randi() % 10000
-	var core_id: String = "%s_%d" % [state.recipe.id, uid]
+	var pid: String = "%s_%d" % [recipe.id, uid]
 
-	var c: Core = Core.make_main_from_tiers(
-		core_id,
-		"%s·%s" % [state.recipe.display_name, get_quality_name()],
-		"bullet",
-		damage_tier, range_tier, "small",
-		30,   # default max_charges（可充能，回工作室恢复）
-		"",
-		0.3
+	var c: Core = Core.make_product(
+		pid,
+		"%s·%s" % [recipe.display_name, get_quality_name()],
+		recipe.product_type,
+		recipe.base_uses,
+		result_lv
 	)
-	c.element_tags = el_tags
-	c.tag_words = tag_words
-	c.result_lv = result_lv
+	c.elements = final_elements()
+	c.element_effects = interpreted_effects()
+	c.element_tags = triggered_element_resonances()
+	c.tag_words = triggered_tag_resonances.duplicate()
 
-	GameState.owned_cores.append(c)
+	var sig := check_signature()
+	c.signature_name = str(sig["name"])
+	c.signature_unlocked = bool(sig["unlocked"])
+
+	# 传世珍品招牌:交易品品质跃升(占位——真实经济系统接入时兑现售价)
+	GameState.owned_items.append(c)
 	return c
+
+## 兼容旧名(测试/UI 可能仍调用)
+func build_core() -> Core:
+	return build_product()
