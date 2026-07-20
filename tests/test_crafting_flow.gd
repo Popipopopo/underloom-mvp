@@ -47,18 +47,26 @@ func _test_full_flow() -> void:
 	var expected: int = m.get_slot_roll(0).size() + m.get_slot_roll(1).size() + m.get_slot_roll(2).size()
 	_check(m.rolled_elements.size() == expected, "干预池与槽位 roll 完全一致（无隐藏随机）")
 
-	# 点数分配
+	# 共享点数池（实测修订：锁定元素与 Tag 共鸣同池，无预分配）
 	m.compute_lv()
 	_check(m.total_pts > 0, "总点数 > 0（品质 %s，共 %d 点）" % [m.get_quality_name(), m.total_pts])
-	_check(m.allocate_points(m.total_pts + 1, -1) != "", "非法分配被拒绝")
-	_check(m.allocate_points(m.total_pts - 1, 1) == "", "合法分配成功")
-	_check(m.element_retain_pts == m.total_pts - 1 and m.resonance_retain_pts == 1, "两种保留点数值正确")
+	_check(m.pts == m.total_pts, "共享点数池初始化为总点数")
+
+	# Tag 共鸣扣点：第一个免费，之后每个 1 点
+	# 该材料组合的可用共鸣固定：鬼火(发光+幽影)、沸腾(高温+液体)、熔岩核(矿物+高温)
+	var pts_before: int = m.pts
+	_check(m.trigger_tag_resonance("鬼火", true) == "", "第一个 Tag 共鸣触发成功")
+	_check(m.pts == pts_before, "免费触发不扣点")
+	_check(m.trigger_tag_resonance("沸腾", false) == "", "第二个 Tag 共鸣触发成功")
+	_check(m.pts == pts_before - 1, "付费触发扣 1 点")
 
 	# 锁定 + 结算
 	var before: int = GameState.get_workshop_count("史莱姆凝胶")
 	m.toggle_lock(0)
+	_check(m.pts == pts_before - 2, "锁定元素扣 1 点（与共鸣同池）")
 	var core: Core = m.build_core()
 	_check(core != null, "build_core 产出核")
+	_check(core.tag_words.has("鬼火") and core.tag_words.has("沸腾"), "Tag 词条写入成品")
 	_check(core.max_charges == 30 and core.current_charges == 30, "核带 30 充能")
 	_check(GameState.get_workshop_count("史莱姆凝胶") == before - 1, "材料被消耗")
 
@@ -73,7 +81,6 @@ func _test_reroll_keeps_locked() -> void:
 	var m := _make_filled_manager()
 	m.roll_elements()
 	m.compute_lv()
-	m.allocate_points(m.total_pts, 0)
 	# 锁定第一个元素
 	m.toggle_lock(0)
 	var locked_el: String = m.rolled_elements[0]["element"]
@@ -101,7 +108,6 @@ func _test_x1_and_threshold_order() -> void:
 	var m := _make_filled_manager()
 	m.roll_elements()
 	m.compute_lv()
-	m.allocate_points(m.total_pts, 0)
 	# 手工构造锁定状态验证共鸣判定（绕过点数，直接改 state）
 	m.rolled_elements = [
 		{"element": "风", "mat_index": 0, "state": "locked"},

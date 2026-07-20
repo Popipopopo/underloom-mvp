@@ -86,10 +86,10 @@ var rolled_elements: Array = []
 # Step 3 outputs
 var result_lv: int = 0
 var result_quality_index: int = 0    # 0=石 1=铜 2=银 3=金
-var total_pts: int = 0               # 由品质决定，玩家自主分配（v1.1 §2.4）
-var points_allocated: bool = false
-var element_retain_pts: int = 0
-var resonance_retain_pts: int = 0
+var total_pts: int = 0               # 由品质决定
+# 共享点数池：锁定元素、触发额外 Tag 共鸣都花这里。
+# （2026-07-20 实测反馈：干涉合并为一屏后不再拆两种点、不再预分配）
+var pts: int = 0
 
 # 重炼：锁定的保留，未锁定的重掷。每次合成 1 次机会（v1.1 §2.4）
 var reroll_charges: int = 0
@@ -111,9 +111,8 @@ func set_recipe_by_id(id: String) -> bool:
 	rolled_elements.clear()
 	triggered_tag_resonances.clear()
 	consumed_tags.clear()
-	points_allocated = false
-	element_retain_pts = 0
-	resonance_retain_pts = 0
+	total_pts = 0
+	pts = 0
 	reroll_charges = 0
 	return true
 
@@ -214,27 +213,8 @@ func compute_lv() -> void:
 	# Quality tier  (explicit int cast silences integer-division warning)
 	result_quality_index = clampi(int(result_lv - 1) / 10, 0, 3)
 	total_pts = QUALITY_TOTAL_POINTS[result_quality_index]
-	# 点数由玩家在干预开始前自主分配（allocate_points），此处只重置
-	points_allocated = false
-	element_retain_pts = 0
-	resonance_retain_pts = 0
+	pts = total_pts
 	reroll_charges = 1
-
-## v1.1 §2.4：合成开始前，玩家把 total_pts 自主分配给两种保留点。
-## 想稳就多拿元素点，想赌 tag 组合就多拿共鸣点。
-## Returns "" on success, error string on failure.
-func allocate_points(elem_pts: int, res_pts: int) -> String:
-	if elem_pts < 0 or res_pts < 0:
-		return "points cannot be negative"
-	if elem_pts + res_pts != total_pts:
-		return "must allocate exactly %d points" % total_pts
-	element_retain_pts = elem_pts
-	resonance_retain_pts = res_pts
-	points_allocated = true
-	# 重新分配意味着重新开始干涉：清掉已有锁定，避免点数账目错乱
-	for entry in rolled_elements:
-		entry["state"] = "inactive"
-	return ""
 
 func get_quality_name() -> String:
 	return QUALITY_NAMES[result_quality_index]
@@ -273,13 +253,13 @@ func toggle_lock(element_index: int) -> bool:
 	var entry: Dictionary = rolled_elements[element_index]
 	if entry["state"] == "locked":
 		entry["state"] = "inactive"
-		element_retain_pts += 1
+		pts += 1
 		return true
 	elif entry["state"] == "inactive":
-		if element_retain_pts <= 0:
+		if pts <= 0:
 			return false   # no points left
 		entry["state"] = "locked"
-		element_retain_pts -= 1
+		pts -= 1
 		return true
 	return false
 
@@ -407,6 +387,17 @@ func collect_all_tags() -> Array[String]:
 				tag_set.append(t)
 	return tag_set
 
+## 哪些已入槽材料带这个 tag（UI 显示共鸣来源用）
+func get_tag_providers(tag: String) -> Array[String]:
+	var names: Array[String] = []
+	if state == null:
+		return names
+	for mat_id in state.fills:
+		var mat: CraftingMaterial = MaterialDB.get_material(str(mat_id))
+		if mat != null and mat.has_tag(tag) and not names.has(mat.display_name):
+			names.append(mat.display_name)
+	return names
+
 ## Which tag resonances are currently available given remaining tags
 func available_tag_resonances() -> Array[Dictionary]:
 	var all_tags := collect_all_tags()
@@ -434,9 +425,9 @@ func trigger_tag_resonance(resonance_name: String, first_trigger_free: bool) -> 
 	if triggered_tag_resonances.has(resonance_name):
 		return "already triggered"
 	if not first_trigger_free:
-		if resonance_retain_pts <= 0:
-			return "no resonance points left"
-		resonance_retain_pts -= 1
+		if pts <= 0:
+			return "no points left"
+		pts -= 1
 
 	# Find the resonance entry and consume its tags
 	for res in TAG_RESONANCES:
