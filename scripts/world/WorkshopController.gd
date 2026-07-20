@@ -31,8 +31,12 @@ func _setup_camera_limits() -> void:
 func _on_start_gate_body_entered(body: Node) -> void:
 	if body == null or not body.is_in_group("player"):
 		return
-	# v1.1：横版地下城已移除，出门入口等节点地图探索系统接入
-	print("[Workshop] 探索入口：节点地图系统开发中")
+	# MVP:出门先直接进遭遇战(CE1 节点地图接入前的临时入口)
+	call_deferred("_enter_battle")
+
+
+func _enter_battle() -> void:
+	get_tree().change_scene_to_file("res://scenes/world/battle.tscn")
 
 
 func _on_craft_bench_body_entered(body: Node) -> void:
