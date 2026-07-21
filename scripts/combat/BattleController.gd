@@ -344,15 +344,21 @@ func _show_result() -> void:
 	_log_scroll.scroll_vertical = int(_log_scroll.get_v_scroll_bar().max_value)
 
 	var back := Button.new()
-	back.text = "继续探索" if GameState.expedition_active else "返回工作室"
+	var is_defeat := not _mgr.victory and not _mgr.retreated
+	back.text = "继续探索" if (GameState.expedition_active and not is_defeat) else "返回工作室"
 	back.custom_minimum_size = Vector2(160, 44)
 	back.pressed.connect(_leave_battle)
 	_footer.add_child(back)
 
 func _leave_battle() -> void:
-	# 远征中 → 回地图(遭遇格已在进战斗前标记);否则回工作室
-	var target := "res://scenes/world/map.tscn" if GameState.expedition_active else WORKSHOP
-	get_tree().change_scene_to_file(target)
+	# 战败(HP 归零)→ 结束远征、传回工作室;胜利/主动撤退 → 回地图继续探索
+	if not _mgr.victory and not _mgr.retreated:
+		GameState.end_expedition()
+		get_tree().change_scene_to_file(WORKSHOP)
+	elif GameState.expedition_active:
+		get_tree().change_scene_to_file("res://scenes/world/map.tscn")
+	else:
+		get_tree().change_scene_to_file(WORKSHOP)
 
 func _grant_drop() -> void:
 	var mat := MaterialDB.get_material("史莱姆凝胶")
