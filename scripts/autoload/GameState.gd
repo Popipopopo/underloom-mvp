@@ -27,6 +27,7 @@ var expedition_map: Dictionary = {}      # {"q,r": {type, revealed, used}}
 var expedition_player: Vector2i = Vector2i.ZERO
 var expedition_layer: int = 1
 var pending_encounter: String = ""       # 遭遇战格 key(战斗返回后标记已用)
+var day: int = 1                         # 总天数(软记录,仅成就/限期任务用;移动/搜刮推进)
 
 func is_backpack_full() -> bool:
 	return backpack_items.size() >= BACKPACK_CAP

@@ -8,6 +8,7 @@ const WORKSHOP := "res://scenes/world/workshop.tscn"
 const BATTLE := "res://scenes/world/battle.tscn"
 const HEX_SIZE := 48.0
 const MAP_RADIUS := 2
+const SITE_SCENE := "res://scenes/ui/SiteScreen.tscn"
 
 const TYPE_COLOR := {
 	"start":   Color(0.35, 0.45, 0.6),
@@ -142,8 +143,8 @@ func _build_ui() -> void:
 	_update_top()
 
 func _update_top() -> void:
-	_top_lbl.text = "地下 -%d 层    背包 %d/%d" % [
-		GameState.expedition_layer, GameState.backpack_items.size(), GameState.BACKPACK_CAP]
+	_top_lbl.text = "地下 -%d 层    第 %d 天    背包 %d/%d" % [
+		GameState.expedition_layer, GameState.day, GameState.backpack_items.size(), GameState.BACKPACK_CAP]
 
 func _flash(msg: String) -> void:
 	_msg_lbl.text = msg
@@ -161,15 +162,17 @@ func _try_move(target: Vector2i) -> void:
 	if not _neighbors(GameState.expedition_player).has(target):
 		return   # 只能走到相邻格
 	GameState.expedition_player = target
+	GameState.day += 1   # 移动消耗天数(MVP 固定1天;地形差异待多地形)
 	_reveal_around(GameState.expedition_map, target)
 	queue_redraw()
+	_update_top()
 	_trigger(target)
 
 func _trigger(c: Vector2i) -> void:
 	var cell: Dictionary = GameState.expedition_map[_key(c)]
 	match cell["type"]:
 		"gather":
-			_do_gather(c, cell)
+			_open_site(c, "gather")
 		"encounter":
 			GameState.pending_encounter = _key(c)
 			get_tree().change_scene_to_file(BATTLE)
@@ -179,22 +182,27 @@ func _trigger(c: Vector2i) -> void:
 		_:
 			_flash("")
 
-func _do_gather(c: Vector2i, cell: Dictionary) -> void:
-	if cell.get("used", false):
+func _open_site(c: Vector2i, type: String) -> void:
+	var ps: PackedScene = load(SITE_SCENE)
+	if ps == null:
 		return
-	if GameState.is_backpack_full():
-		_flash("背包满了,该回工作室清空!")
-		return
-	# MVP:采集点随机产一种基础材料(按普通丰度)
-	var pool := ["白蘑菇", "苔藓", "史莱姆凝胶", "风化石英", "草药"]
-	var mat := MaterialDB.get_material(pool[randi() % pool.size()])
-	if mat != null:
-		GameState.add_backpack_item(MaterialInstance.roll_from(mat, 0.5))
-		cell["used"] = true
-		cell["type"] = "empty"
-		_flash("采集到 %s!" % mat.display_name)
-		_update_top()
-		queue_redraw()
+	var root: Control = ps.instantiate()
+	root.setup(type)
+	var layer := CanvasLayer.new()
+	layer.layer = 30
+	layer.add_child(root)
+	add_child(layer)
+	root.closed.connect(_on_site_closed.bind(c, layer))
+
+func _on_site_closed(c: Vector2i, layer: CanvasLayer) -> void:
+	if is_instance_valid(layer):
+		layer.queue_free()
+	# 探索过 → 标记已用,变空地
+	if GameState.expedition_map.has(_key(c)):
+		GameState.expedition_map[_key(c)]["used"] = true
+		GameState.expedition_map[_key(c)]["type"] = "empty"
+	_update_top()
+	queue_redraw()
 
 func _return_workshop() -> void:
 	GameState.end_expedition()
