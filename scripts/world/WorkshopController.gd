@@ -1,11 +1,13 @@
 extends Node2D
 
 const CRAFTING_SCENE := "res://scenes/ui/CraftingScreen.tscn"
+const INVENTORY_SCENE := "res://scenes/ui/InventoryScreen.tscn"
 
 @onready var start_gate: Area2D = $StartGate
 var _craft_bench: Area2D
 
 var _craft_ui_layer: CanvasLayer = null
+var _inv_layer: CanvasLayer = null
 
 
 func _ready() -> void:
@@ -16,6 +18,40 @@ func _ready() -> void:
 	else:
 		push_error("workshop.tscn is missing a child Area2D named CraftBench.")
 	_setup_camera_limits()
+	_build_hud()
+
+
+func _build_hud() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 20
+	var btn := Button.new()
+	btn.text = "📦 查看库存"
+	btn.custom_minimum_size = Vector2(170, 44)
+	btn.position = Vector2(30, 30)
+	btn.pressed.connect(_open_inventory)
+	layer.add_child(btn)
+	add_child(layer)
+
+
+func _open_inventory() -> void:
+	if _inv_layer != null and is_instance_valid(_inv_layer):
+		return
+	var ps: PackedScene = load(INVENTORY_SCENE)
+	if ps == null:
+		return
+	var root: Control = ps.instantiate()
+	_inv_layer = CanvasLayer.new()
+	_inv_layer.layer = 30
+	_inv_layer.add_child(root)
+	add_child(_inv_layer)
+	if root.has_signal("closed"):
+		root.closed.connect(_on_inventory_closed)
+
+
+func _on_inventory_closed() -> void:
+	if _inv_layer != null and is_instance_valid(_inv_layer):
+		_inv_layer.queue_free()
+	_inv_layer = null
 
 
 func _setup_camera_limits() -> void:
