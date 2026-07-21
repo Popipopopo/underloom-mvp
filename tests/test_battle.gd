@@ -11,7 +11,9 @@ func _ready() -> void:
 	_test_weakness_bonus()
 	_test_overload_signature()
 	_test_rapidfire_signature()
-	_test_retreat_on_depleted()
+	_test_hero_basic_attack()
+	_test_potion_heal()
+	_test_retreat()
 	_test_victory()
 	if _fail_count == 0:
 		print("=== ALL TESTS PASSED ===")
@@ -71,15 +73,27 @@ func _test_rapidfire_signature() -> void:
 	_check(bm.enemy["hp"] == 100 - 20, "连射一回合打两发共20: 敌HP=%d" % bm.enemy["hp"])
 	_check(core.current_uses == 6, "连射消耗2次使用: %d" % core.current_uses)
 
-func _test_retreat_on_depleted() -> void:
-	print("[test] retreat when cores depleted")
-	var core := _make_core("弱核", 1, ["土"], 1, "", false)   # 1次用完
-	var bm := BattleManager.new(20, [core], _enemy(999, "", 2))   # 打不死
-	bm.player_attack(0)
-	_check(core.is_depleted(), "核已打光")
-	_check(not bm.can_act(), "无核可用")
-	bm.enemy_turn()
-	_check(bm.finished and bm.retreated and not bm.victory, "核打光触发撤退(retreated=true)")
+func _test_hero_basic_attack() -> void:
+	print("[test] hero basic attack (弱保底,不耗核)")
+	var bm := BattleManager.new(20, [], _enemy(30))   # 无核也能行动
+	bm.player_basic_attack()
+	_check(bm.enemy["hp"] == 30 - BattleManager.BASIC_ATK,
+		"普攻固定伤害 %d: 敌HP=%d" % [BattleManager.BASIC_ATK, bm.enemy["hp"]])
+
+func _test_potion_heal() -> void:
+	print("[test] potion heal")
+	var pot := Core.make_product("p1", "回复药", "potion", 3, 3)   # heal 8+3=11
+	var bm := BattleManager.new(20, [], _enemy(30), [pot])
+	bm.player_hp = 5
+	bm.player_use_potion(0)
+	_check(bm.player_hp == 16, "喝药回血 5→16(8+lv3): %d" % bm.player_hp)
+	_check(pot.current_uses == 2, "药消耗 1 次: %d" % pot.current_uses)
+
+func _test_retreat() -> void:
+	print("[test] voluntary retreat")
+	var bm := BattleManager.new(20, [], _enemy(30))
+	bm.retreat()
+	_check(bm.finished and bm.retreated and not bm.victory, "主动撤退结束战斗(无战败)")
 
 func _test_victory() -> void:
 	print("[test] victory")

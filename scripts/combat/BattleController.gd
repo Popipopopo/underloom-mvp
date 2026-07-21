@@ -31,8 +31,9 @@ func _ready() -> void:
 # ── 战斗初始化 ────────────────────────────────────────────────────────────────
 func _start_battle() -> void:
 	var cores := _collect_player_cores()
+	var potions := _collect_player_potions()
 	var enemy := {"name": "地穴史莱姆", "hp": 30, "max_hp": 30, "weakness": "火", "attack": 4}
-	_mgr = BattleManager.new(20, cores, enemy)
+	_mgr = BattleManager.new(20, cores, enemy, potions)
 
 func _collect_player_cores() -> Array:
 	var result: Array = []
@@ -48,6 +49,15 @@ func _collect_player_cores() -> Array:
 		var t := Core.make_product("emergency_core", "应急核", "core", 3, 3)
 		t.elements.assign(["火", "火"])
 		result.append(t)
+	return result
+
+## 可用的恢复药(product_type == "potion")
+func _collect_player_potions() -> Array:
+	var result: Array = []
+	for it in GameState.owned_items:
+		var c := it as Core
+		if c.product_type == "potion" and not c.is_depleted():
+			result.append(c)
 	return result
 
 # ── UI 构建(JRPG 布局)────────────────────────────────────────────────────────
@@ -246,26 +256,56 @@ func _rebuild_cmd() -> void:
 	if _mgr.finished:
 		_cmd_title.text = "战斗结束"
 		return
-	var avail := _mgr.available_cores()
-	for i in avail.size():
-		var core: Core = avail[i]
+	# 普攻(总可用,弱保底)
+	var atk := _cmd_btn("⚔ 普攻(弱)", "主角挥杖,伤害低但不耗核")
+	atk.pressed.connect(_on_basic_attack)
+	_cmd_box.add_child(atk)
+	# 核
+	var cores := _mgr.available_cores()
+	for i in cores.size():
+		var core: Core = cores[i]
 		var els := " ".join(core.elements) if not core.elements.is_empty() else "无元素"
 		var sig := "   ★%s" % core.signature_name if core.signature_unlocked else ""
-		var btn := Button.new()
-		btn.text = "%s\n%s ｜ 剩 %d 次%s" % [core.display_name, els, core.current_uses, sig]
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.custom_minimum_size = Vector2(0, 48)
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.disabled = _busy
-		btn.pressed.connect(_on_use_core.bind(i))
-		_cmd_box.add_child(btn)
+		var b := _cmd_btn(core.display_name, "%s ｜ 剩 %d 次%s" % [els, core.current_uses, sig])
+		b.pressed.connect(_on_use_core.bind(i))
+		_cmd_box.add_child(b)
+	# 药
+	var pots := _mgr.available_potions()
+	for i in pots.size():
+		var pot: Core = pots[i]
+		var pb := _cmd_btn("♥ 喝 %s" % pot.display_name, "回血 ｜ 剩 %d 次" % pot.current_uses)
+		pb.pressed.connect(_on_use_potion.bind(i))
+		_cmd_box.add_child(pb)
+	# 撤退
+	var flee := _cmd_btn("🏳 撤退", "放弃这场,退回地图")
+	flee.pressed.connect(_on_retreat)
+	_cmd_box.add_child(flee)
+
+func _cmd_btn(title: String, sub: String) -> Button:
+	var b := Button.new()
+	b.text = "%s\n%s" % [title, sub]
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 46)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.disabled = _busy
+	return b
 
 # ── 交互 ──────────────────────────────────────────────────────────────────────
 func _on_use_core(idx: int) -> void:
+	await _player_action(func(): _mgr.player_attack(idx))
+
+func _on_basic_attack() -> void:
+	await _player_action(func(): _mgr.player_basic_attack())
+
+func _on_use_potion(idx: int) -> void:
+	await _player_action(func(): _mgr.player_use_potion(idx))
+
+## 玩家行动统一流程:执行 → 刷新 → 敌人回合 → 刷新 → 结算
+func _player_action(act: Callable) -> void:
 	if _busy or _mgr.finished:
 		return
 	_busy = true
-	_mgr.player_attack(idx)
+	act.call()
 	_refresh()
 	if not _mgr.finished:
 		await get_tree().create_timer(0.55).timeout
@@ -274,6 +314,13 @@ func _on_use_core(idx: int) -> void:
 	_refresh()
 	if _mgr.finished:
 		_show_result()
+
+func _on_retreat() -> void:
+	if _busy or _mgr.finished:
+		return
+	_mgr.retreat()
+	_refresh()
+	_show_result()
 
 func _show_result() -> void:
 	for ch in _footer.get_children():
@@ -286,9 +333,8 @@ func _show_result() -> void:
 		result_lbl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
 		_grant_drop()
 	elif _mgr.retreated:
-		result_lbl.text = "🏳 核用尽,撤退(损失部分采集)"
+		result_lbl.text = "🏳 撤退了(未获战利品,但无损失)"
 		result_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.4))
-		_retreat_loss()
 	else:
 		result_lbl.text = "💀 战败,被传回工作室(损失部分采集)"
 		result_lbl.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
