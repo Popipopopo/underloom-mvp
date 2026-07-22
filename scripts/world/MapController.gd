@@ -7,7 +7,7 @@ extends Node2D
 const WORKSHOP := "res://scenes/world/workshop.tscn"
 const BATTLE := "res://scenes/world/battle.tscn"
 const HEX_SIZE := 48.0
-const MAP_RADIUS := 2
+const MAP_RADIUS := 3
 const SITE_SCENE := "res://scenes/ui/SiteScreen.tscn"
 
 const TYPE_COLOR := {
@@ -64,10 +64,10 @@ func _generate_map() -> void:
 	# 采集点带环境类型:环境决定采什么(菌毯→真菌 / 碎石→矿物 / 草丛→植物 / 巢穴→魔物)
 	var envs := ["fungus", "mineral", "plant", "beast"]
 	envs.shuffle()
-	for i in min(3, rest.size()):
+	for i in min(6, rest.size()):
 		map[_key(rest[i])]["type"] = "gather"
 		map[_key(rest[i])]["env"] = envs[i % envs.size()]
-	for i in range(3, min(5, rest.size())):
+	for i in range(6, min(10, rest.size())):
 		map[_key(rest[i])]["type"] = "encounter"
 
 	GameState.expedition_map = map
