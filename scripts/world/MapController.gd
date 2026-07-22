@@ -26,10 +26,9 @@ var _font: Font
 var _msg_lbl: Label
 var _top_lbl: Label
 
-# 路线预览(CE1 式:点目标显示路线+天数,再点同一格确认出发)
-var _pending_path: Array = []
-var _pending_target := Vector2i.ZERO
-var _has_pending: bool = false
+# hover 路线预览(CE1 式:鼠标悬停显示虚线+天数,点击直接走)
+var _hover_path: Array = []
+var _hover_lbl: Label
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
@@ -99,10 +98,14 @@ func _draw() -> void:
 			_draw_hex(pos, FOG_COLOR, "?")
 		else:
 			_draw_hex(pos, TYPE_COLOR.get(cell["type"], FOG_COLOR), _cell_icon(cell))
-	# 路线预览点
-	for i in range(1, _pending_path.size()):
-		var dot_pos: Vector2 = _hex_to_pixel(_pending_path[i]) + origin
-		draw_circle(dot_pos, 6, Color(0.9, 0.55, 0.9))
+	# hover 路线虚线 + 终点标记
+	if _hover_path.size() >= 2:
+		for i in range(_hover_path.size() - 1):
+			var a: Vector2 = _hex_to_pixel(_hover_path[i]) + origin
+			var b: Vector2 = _hex_to_pixel(_hover_path[i + 1]) + origin
+			draw_dashed_line(a, b, Color(1.0, 0.9, 0.5, 0.9), 3.0, 10.0)
+		var endp: Vector2 = _hex_to_pixel(_hover_path[_hover_path.size() - 1]) + origin
+		draw_circle(endp, 11, Color(1.0, 0.9, 0.5, 0.35))
 	# 玩家
 	var ppos := _hex_to_pixel(GameState.expedition_player) + origin
 	draw_circle(ppos, 12, Color(1, 1, 1))
@@ -149,6 +152,12 @@ func _build_ui() -> void:
 	_msg_lbl.add_theme_color_override("font_color", Color(0.9, 0.85, 0.5))
 	layer.add_child(_msg_lbl)
 
+	_hover_lbl = Label.new()
+	_hover_lbl.add_theme_font_size_override("font_size", 15)
+	_hover_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.55))
+	_hover_lbl.visible = false
+	layer.add_child(_hover_lbl)
+
 	var back := Button.new()
 	back.text = "返回工作室"
 	back.position = Vector2(20, 76)
@@ -157,7 +166,7 @@ func _build_ui() -> void:
 	layer.add_child(back)
 
 	var hint := Label.new()
-	hint.text = "点目标格规划路线,再点确认出发 · 找到 ▼下层 或 背包满就回工作室"
+	hint.text = "鼠标移到目标格看路线,点击出发 · 找到 ▼下层 或 背包满就回工作室"
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -175,46 +184,40 @@ func _flash(msg: String) -> void:
 
 # ── 输入 / 移动 ───────────────────────────────────────────────────────────────
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var origin := get_viewport_rect().size / 2.0
-		var target := _pixel_to_hex(event.position - origin)
-		_on_map_click(target)
+	var origin := get_viewport_rect().size / 2.0
+	if event is InputEventMouseMotion:
+		_update_hover(_pixel_to_hex(event.position - origin), event.position)
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if not _hover_path.is_empty():
+			_walk_hover()
 
-## CE1 式两段移动:第一次点目标 → 规划路线并显示天数;再点同一格 → 确认出发
-func _on_map_click(target: Vector2i) -> void:
-	if not GameState.expedition_map.has(_key(target)):
-		return
-	if target == GameState.expedition_player:
-		_clear_path()
-		return
-	if _has_pending and target == _pending_target:
-		_execute_path()
+## 鼠标悬停:实时算到该格的路线,画虚线 + 跟随鼠标显示天数
+func _update_hover(target: Vector2i, mouse_pos: Vector2) -> void:
+	if not GameState.expedition_map.has(_key(target)) or target == GameState.expedition_player:
+		_hover_path = []
+		_hover_lbl.visible = false
+		queue_redraw()
 		return
 	var path := _find_path(GameState.expedition_player, target)
+	_hover_path = path
 	if path.is_empty():
-		_flash("走不到那里。")
-		return
-	_pending_path = path
-	_pending_target = target
-	_has_pending = true
-	_flash("路线 %d 格,约 %d 天 —— 再点一次确认出发" % [path.size() - 1, path.size() - 1])
+		_hover_lbl.visible = false
+	else:
+		_hover_lbl.text = "%d 天" % (path.size() - 1)
+		_hover_lbl.position = mouse_pos + Vector2(16, 6)
+		_hover_lbl.visible = true
 	queue_redraw()
 
-func _clear_path() -> void:
-	_pending_path = []
-	_has_pending = false
-	_flash("")
-	queue_redraw()
-
-## 沿路线走:每格 +1 天、揭开迷雾;途中格不触发,仅目的地触发(MVP)
-func _execute_path() -> void:
-	var dest := _pending_target
-	for i in range(1, _pending_path.size()):
-		var step: Vector2i = _pending_path[i]
+## 点击:沿 hover 路线走到底(每格 +1 天、揭雾),到目的地才触发内容
+func _walk_hover() -> void:
+	var dest: Vector2i = _hover_path[_hover_path.size() - 1]
+	for i in range(1, _hover_path.size()):
+		var step: Vector2i = _hover_path[i]
 		GameState.expedition_player = step
 		GameState.day += 1
 		_reveal_around(GameState.expedition_map, step)
-	_clear_path()
+	_hover_path = []
+	_hover_lbl.visible = false
 	_update_top()
 	queue_redraw()
 	_trigger(dest)
