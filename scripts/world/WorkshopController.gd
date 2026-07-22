@@ -24,13 +24,21 @@ func _ready() -> void:
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 20
-	var btn := Button.new()
-	btn.text = "📦 查看库存"
-	btn.custom_minimum_size = Vector2(170, 44)
-	btn.position = Vector2(30, 30)
-	btn.pressed.connect(_open_inventory)
-	layer.add_child(btn)
+	var vb := VBoxContainer.new()
+	vb.position = Vector2(30, 30)
+	vb.add_theme_constant_override("separation", 10)
+	layer.add_child(vb)
+	_make_hud_btn(vb, "🔨 合成", _open_crafting)
+	_make_hud_btn(vb, "🧭 出发冒险", _enter_map)
+	_make_hud_btn(vb, "📦 查看库存", _open_inventory)
 	add_child(layer)
+
+func _make_hud_btn(parent: Node, text: String, cb: Callable) -> void:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(180, 46)
+	b.pressed.connect(cb)
+	parent.add_child(b)
 
 
 func _open_inventory() -> void:
@@ -78,6 +86,10 @@ func _enter_map() -> void:
 func _on_craft_bench_body_entered(body: Node) -> void:
 	if body == null or not body.is_in_group("player"):
 		return
+	_open_crafting()
+
+
+func _open_crafting() -> void:
 	if _craft_ui_layer != null and is_instance_valid(_craft_ui_layer):
 		return
 	var ps: PackedScene = load(CRAFTING_SCENE)
