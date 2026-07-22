@@ -26,6 +26,11 @@ var _font: Font
 var _msg_lbl: Label
 var _top_lbl: Label
 
+# 路线预览(CE1 式:点目标显示路线+天数,再点同一格确认出发)
+var _pending_path: Array = []
+var _pending_target := Vector2i.ZERO
+var _has_pending: bool = false
+
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	if not GameState.expedition_active:
@@ -57,8 +62,12 @@ func _generate_map() -> void:
 	# 中间随机撒采集/遭遇
 	var rest := pool.slice(1)
 	rest.shuffle()
+	# 采集点带环境类型:环境决定采什么(菌毯→真菌 / 碎石→矿物 / 草丛→植物 / 巢穴→魔物)
+	var envs := ["fungus", "mineral", "plant", "beast"]
+	envs.shuffle()
 	for i in min(3, rest.size()):
 		map[_key(rest[i])]["type"] = "gather"
+		map[_key(rest[i])]["env"] = envs[i % envs.size()]
 	for i in range(3, min(5, rest.size())):
 		map[_key(rest[i])]["type"] = "encounter"
 
@@ -89,11 +98,26 @@ func _draw() -> void:
 		if not cell["revealed"]:
 			_draw_hex(pos, FOG_COLOR, "?")
 		else:
-			_draw_hex(pos, TYPE_COLOR.get(cell["type"], FOG_COLOR), str(TYPE_ICON.get(cell["type"], "")))
+			_draw_hex(pos, TYPE_COLOR.get(cell["type"], FOG_COLOR), _cell_icon(cell))
+	# 路线预览点
+	for i in range(1, _pending_path.size()):
+		var dot_pos: Vector2 = _hex_to_pixel(_pending_path[i]) + origin
+		draw_circle(dot_pos, 6, Color(0.9, 0.55, 0.9))
 	# 玩家
 	var ppos := _hex_to_pixel(GameState.expedition_player) + origin
 	draw_circle(ppos, 12, Color(1, 1, 1))
 	draw_circle(ppos, 8, Color(0.2, 0.6, 1.0))
+
+## 采集点按环境显示不同图标,其余按类型
+func _cell_icon(cell: Dictionary) -> String:
+	if cell["type"] == "gather":
+		match str(cell.get("env", "")):
+			"fungus": return "🍄"
+			"mineral": return "⛏"
+			"plant": return "🌿"
+			"beast": return "👹"
+		return "✿"
+	return str(TYPE_ICON.get(cell["type"], ""))
 
 func _draw_hex(center: Vector2, color: Color, label: String) -> void:
 	var pts := PackedVector2Array()
@@ -133,7 +157,7 @@ func _build_ui() -> void:
 	layer.add_child(back)
 
 	var hint := Label.new()
-	hint.text = "点相邻格移动 · 揭开迷雾 · 找到 ▼下层 或 背包满就回工作室"
+	hint.text = "点目标格规划路线,再点确认出发 · 找到 ▼下层 或 背包满就回工作室"
 	hint.add_theme_font_size_override("font_size", 12)
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.65))
 	hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -154,19 +178,69 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var origin := get_viewport_rect().size / 2.0
 		var target := _pixel_to_hex(event.position - origin)
-		_try_move(target)
+		_on_map_click(target)
 
-func _try_move(target: Vector2i) -> void:
+## CE1 式两段移动:第一次点目标 → 规划路线并显示天数;再点同一格 → 确认出发
+func _on_map_click(target: Vector2i) -> void:
 	if not GameState.expedition_map.has(_key(target)):
 		return
-	if not _neighbors(GameState.expedition_player).has(target):
-		return   # 只能走到相邻格
-	GameState.expedition_player = target
-	GameState.day += 1   # 移动消耗天数(MVP 固定1天;地形差异待多地形)
-	_reveal_around(GameState.expedition_map, target)
+	if target == GameState.expedition_player:
+		_clear_path()
+		return
+	if _has_pending and target == _pending_target:
+		_execute_path()
+		return
+	var path := _find_path(GameState.expedition_player, target)
+	if path.is_empty():
+		_flash("走不到那里。")
+		return
+	_pending_path = path
+	_pending_target = target
+	_has_pending = true
+	_flash("路线 %d 格,约 %d 天 —— 再点一次确认出发" % [path.size() - 1, path.size() - 1])
 	queue_redraw()
+
+func _clear_path() -> void:
+	_pending_path = []
+	_has_pending = false
+	_flash("")
+	queue_redraw()
+
+## 沿路线走:每格 +1 天、揭开迷雾;途中格不触发,仅目的地触发(MVP)
+func _execute_path() -> void:
+	var dest := _pending_target
+	for i in range(1, _pending_path.size()):
+		var step: Vector2i = _pending_path[i]
+		GameState.expedition_player = step
+		GameState.day += 1
+		_reveal_around(GameState.expedition_map, step)
+	_clear_path()
 	_update_top()
-	_trigger(target)
+	queue_redraw()
+	_trigger(dest)
+
+## BFS 寻路(当前地形均一,每格 1 天;多地形后改加权)
+func _find_path(from: Vector2i, to: Vector2i) -> Array:
+	if from == to:
+		return []
+	var frontier: Array = [from]
+	var came: Dictionary = {_key(from): from}
+	while not frontier.is_empty():
+		var cur: Vector2i = frontier.pop_front()
+		if cur == to:
+			break
+		for n in _neighbors(cur):
+			if GameState.expedition_map.has(_key(n)) and not came.has(_key(n)):
+				came[_key(n)] = cur
+				frontier.append(n)
+	if not came.has(_key(to)):
+		return []
+	var path: Array = [to]
+	var cur2: Vector2i = to
+	while cur2 != from:
+		cur2 = came[_key(cur2)]
+		path.push_front(cur2)
+	return path
 
 func _trigger(c: Vector2i) -> void:
 	var cell: Dictionary = GameState.expedition_map[_key(c)]
@@ -187,7 +261,8 @@ func _open_site(c: Vector2i, type: String) -> void:
 	if ps == null:
 		return
 	var root: Control = ps.instantiate()
-	root.setup(type)
+	var cell: Dictionary = GameState.expedition_map[_key(c)]
+	root.setup(type, str(cell.get("env", "")))
 	var layer := CanvasLayer.new()
 	layer.layer = 30
 	layer.add_child(root)

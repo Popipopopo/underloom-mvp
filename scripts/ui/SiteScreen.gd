@@ -7,17 +7,33 @@ extends Control
 signal closed
 
 const MAX_SEARCHES := 2
-const GATHER_POOL := ["白蘑菇", "苔藓", "史莱姆凝胶", "风化石英", "草药"]
+# 环境决定采集内容(Poppy 拍板:让"去哪采什么"有规划感)
+const POOLS := {
+	"fungus":  ["白蘑菇", "发光菌", "温热孢子"],
+	"mineral": ["风化石英", "河沙", "盐"],
+	"plant":   ["苔藓", "草药", "野果", "干草"],
+	"beast":   ["史莱姆凝胶", "蝙蝠翼膜", "骷髅碎骨"],
+	"":        ["白蘑菇", "苔藓", "史莱姆凝胶", "风化石英", "草药"],
+}
+const ENV_INFO := {
+	"fungus":  ["🍄 菌毯洞窟", "洞顶垂下发亮的菌丝,脚下的菌毯软得像地毯。\n真菌类素材的宝库。"],
+	"mineral": ["⛏ 碎石堆", "塌落的岩壁堆出一片碎石坡,石缝里闪着结晶的微光。\n适合搜集矿物。"],
+	"plant":   ["🌿 苔原草丛", "湿润的洞穴里长满苔藓和不知名的草药。\n植物类素材随处可见。"],
+	"beast":   ["👹 魔物巢穴", "地上散落着魔物活动的痕迹——凝胶、碎骨、翼膜。\n小心翼翼地捡点残渣吧。"],
+	"":        ["✿ 采集点", "洞壁间生着成片的菌菇与苔藓,石缝里透出微光。\n看起来能搜出些有用的东西。"],
+}
 
 var site_type: String = "gather"
+var env: String = ""
 var _searches_left: int = MAX_SEARCHES
 
 var _result_box: VBoxContainer
 var _status_lbl: Label
 var _search_btn: Button
 
-func setup(p_type: String) -> void:
+func setup(p_type: String, p_env: String = "") -> void:
 	site_type = p_type
+	env = p_env
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -56,8 +72,9 @@ func _build() -> void:
 	root.add_theme_constant_override("separation", 10)
 	panel.add_child(root)
 
+	var info: Array = ENV_INFO.get(env, ENV_INFO[""])
 	var title := Label.new()
-	title.text = "✿ 采集点"
+	title.text = str(info[0])
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 24)
 	root.add_child(title)
@@ -82,7 +99,7 @@ func _build() -> void:
 	root.add_child(art)
 
 	var desc := Label.new()
-	desc.text = "洞壁间生着成片的菌菇与苔藓,石缝里透出微光。\n看起来能搜出些有用的东西。"
+	desc.text = str(info[1])
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc.add_theme_font_size_override("font_size", 14)
 	desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.85))
@@ -129,7 +146,8 @@ func _on_search() -> void:
 		return
 	GameState.day += 1
 	_searches_left -= 1
-	var mat: CraftingMaterial = MaterialDB.get_material(GATHER_POOL[randi() % GATHER_POOL.size()])
+	var pool: Array = POOLS.get(env, POOLS[""])
+	var mat: CraftingMaterial = MaterialDB.get_material(pool[randi() % pool.size()])
 	if mat != null:
 		var inst := MaterialInstance.roll_from(mat, 0.5)
 		GameState.add_backpack_item(inst)
